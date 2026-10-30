@@ -7,7 +7,9 @@ import {
   TelemedRecord,
   LabRecord,
   DownloadFile,
-  User
+  User,
+  ServiceUnitStat,
+  DashboardFundusSummary
 } from '../types';
 import {
   INITIAL_PATIENTS,
@@ -16,8 +18,11 @@ import {
   INITIAL_TELEMED_DATES,
   INITIAL_TELEMED_RECORDS,
   INITIAL_LAB_RECORDS,
-  INITIAL_DOWNLOAD_FILES
+  INITIAL_DOWNLOAD_FILES,
+  INITIAL_SERVICE_UNIT_STATS,
+  INITIAL_DASHBOARD_FUNDUS
 } from '../data/initialData';
+
 
 // Local storage keys
 const LS_KEYS = {
@@ -30,8 +35,11 @@ const LS_KEYS = {
   TELEMED_RECORDS: 'ncd_telemed_records_v1',
   LAB_RECORDS: 'ncd_lab_records_v1',
   DOWNLOAD_FILES: 'ncd_download_files_v1',
-  CURRENT_USER: 'ncd_current_user_v1'
+  CURRENT_USER: 'ncd_current_user_v1',
+  SERVICE_UNIT_STATS: 'ncd_service_unit_stats_v1',
+  DASHBOARD_FUNDUS: 'ncd_dashboard_fundus_v1'
 };
+
 
 // SQL Schema for Supabase
 export const SUPABASE_SQL_SCHEMA = `-- ========================================================
@@ -179,6 +187,28 @@ CREATE TABLE IF NOT EXISTS download_files (
   file_type TEXT
 );
 
+-- 8. Dashboard Service Unit Stats (จาก Google Sheet เดิม)
+CREATE TABLE IF NOT EXISTS dashboard_service_stats (
+  service_name TEXT PRIMARY KEY,
+  patient_count INTEGER DEFAULT 0,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 9. Dashboard Fundus Eye Screening Summary (จาก Google Sheet เดิม)
+CREATE TABLE IF NOT EXISTS dashboard_fundus_summary (
+  id TEXT PRIMARY KEY,
+  exam_date TEXT NOT NULL,
+  location TEXT NOT NULL,
+  total INTEGER DEFAULT 0,
+  no_dr INTEGER DEFAULT 0,
+  mild_npdr INTEGER DEFAULT 0,
+  moderate_npdr INTEGER DEFAULT 0,
+  severe_npdr INTEGER DEFAULT 0,
+  pdr INTEGER DEFAULT 0,
+  poor_view INTEGER DEFAULT 0,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Enable Row Level Security (RLS) & Allow Read/Write for Authenticated / Anon (Demo)
 ALTER TABLE patients ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all operations for anon" ON patients FOR ALL USING (true);
@@ -200,7 +230,83 @@ CREATE POLICY "Allow all operations for anon" ON lab_records FOR ALL USING (true
 
 ALTER TABLE download_files ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all operations for anon" ON download_files FOR ALL USING (true);
+
+ALTER TABLE dashboard_service_stats ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations for anon" ON dashboard_service_stats FOR ALL USING (true);
+
+ALTER TABLE dashboard_fundus_summary ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations for anon" ON dashboard_fundus_summary FOR ALL USING (true);
 `;
+
+export const SUPABASE_GOOGLE_SHEET_SEED_SQL = `-- ========================================================
+-- คำสั่ง SQL สำหรับนำเข้าข้อมูลจาก Google Sheet เดิม เข้า Supabase
+-- วางใน Supabase SQL Editor แล้วกด Run ได้ทันที
+-- ========================================================
+
+-- 1. บันทึกข้อมูลจำนวนผู้ป่วยจำแนกตามหน่วยบริการ (41 แห่ง)
+INSERT INTO dashboard_service_stats (service_name, patient_count) VALUES
+('ศูนย์สุขภาพชุมชนเมืองเชียงราย (PCU)', 3105),
+('ห้วยสัก', 1940),
+('บ้านดู่', 1890),
+('ป่าอ้อดอนชัย', 1617),
+('แม่ยาว', 1513),
+('ดอยลาน', 1378),
+('สันทราย', 1366),
+('รพศ.เบอร์ 4, 14', 1363),
+('ท่าสาย', 1330),
+('สันตาลเหลือง', 1167),
+('สันหนอง', 1002),
+('ริมกก', 843),
+('น้ำลัด', 834),
+('แม่กรณ์', 809),
+('เรือนจำกลาง', 695),
+('ดอยฮาง', 614),
+('ร่องปลาขาว', 605),
+('โล๊ะป่าตุ้ม', 529),
+('โป่งพระบาท', 511),
+('ปางขอน', 483),
+('รอบเวียง', 478),
+('ร่องเบ้อ', 450),
+('หัวฝาย', 403),
+('แม่ข้าวต้ม', 336),
+('พนาสวรรค์', 304),
+('ป่ายางมนต์', 304),
+('นางแล', 261),
+('รวมมิตร', 261),
+('ดงเทพนิมิตร', 260),
+('ปางริมกรณ์', 255),
+('ท่าสุด', 226),
+('ห้วยชมภู', 193),
+('ห้วยแม่ซ้าย', 158),
+('รพ.เชียงราย', 91),
+('จะคือ', 72),
+('โล๊ะป่าห้า', 58),
+('นอกเขต อ.เมืองเชียงราย', 50),
+('รพ.โอเวอร์บรุ๊ค', 1),
+('รพ.ศรีบุรินทร์', 1),
+('คลินิกหมอครอบครัว (PCC)', 0),
+('รพ.ค่ายเม็งรายมหาราช', 0)
+ON CONFLICT (service_name) DO UPDATE SET patient_count = EXCLUDED.patient_count;
+
+-- 2. บันทึกข้อมูลผลการตรวจคัดกรองจอประสาทตาเบาหวาน (Fundus Summary)
+INSERT INTO dashboard_fundus_summary (id, exam_date, location, total, no_dr, mild_npdr, moderate_npdr, severe_npdr, pdr, poor_view) VALUES
+('f-summary-1', '2569-10-01', 'สันทราย', 137, 113, 9, 14, 1, 0, 0),
+('f-summary-2', '2569-10-12', 'สันทราย', 99, 79, 5, 15, 0, 0, 0),
+('f-summary-3', '2569-10-15', 'บ้านดู่', 147, 121, 6, 20, 0, 0, 0),
+('f-summary-4', '2569-10-16', 'บ้านดู่', 178, 126, 16, 28, 6, 1, 0),
+('f-summary-5', '2569-10-22', 'ดงเทพนิมิตร', 74, 53, 2, 19, 0, 0, 0),
+('f-summary-6', '2569-10-29', 'ท่าสาย', 141, 107, 13, 20, 0, 0, 0),
+('f-summary-7', '2569-10-30', 'ท่าสาย', 118, 87, 6, 20, 2, 2, 0)
+ON CONFLICT (id) DO UPDATE SET
+  total = EXCLUDED.total,
+  no_dr = EXCLUDED.no_dr,
+  mild_npdr = EXCLUDED.mild_npdr,
+  moderate_npdr = EXCLUDED.moderate_npdr,
+  severe_npdr = EXCLUDED.severe_npdr,
+  pdr = EXCLUDED.pdr,
+  poor_view = EXCLUDED.poor_view;
+`;
+
 
 export class SupabaseManager {
   private static instance: SupabaseManager;
@@ -505,6 +611,158 @@ export class SupabaseManager {
     return true;
   }
 
+  // DASHBOARD SERVICE UNIT STATS (จาก Google Sheet เดิม)
+  public async getServiceUnitStats(): Promise<ServiceUnitStat[]> {
+    if (this.isConnected && this.client) {
+      try {
+        const { data, error } = await this.client
+          .from('dashboard_service_stats')
+          .select('*')
+          .order('patient_count', { ascending: false });
+        if (!error && data && data.length > 0) {
+          return data.map(r => ({
+            serviceName: r.service_name,
+            patientCount: Number(r.patient_count) || 0
+          }));
+        }
+      } catch (e) {
+        console.warn('Fallback to local service unit stats:', e);
+      }
+    }
+    return this.getLocal<ServiceUnitStat[]>(LS_KEYS.SERVICE_UNIT_STATS, INITIAL_SERVICE_UNIT_STATS);
+  }
+
+  public async saveServiceUnitStats(list: ServiceUnitStat[]): Promise<void> {
+    this.setLocal(LS_KEYS.SERVICE_UNIT_STATS, list);
+    if (this.isConnected && this.client) {
+      try {
+        const rows = list.map(item => ({
+          service_name: item.serviceName,
+          patient_count: item.patientCount,
+          updated_at: new Date().toISOString()
+        }));
+        await this.client.from('dashboard_service_stats').upsert(rows);
+      } catch (e) {
+        console.warn('Could not sync service stats to Supabase:', e);
+      }
+    }
+  }
+
+  // DASHBOARD FUNDUS SUMMARY (จาก Google Sheet เดิม)
+  public async getDashboardFundus(): Promise<DashboardFundusSummary[]> {
+    if (this.isConnected && this.client) {
+      try {
+        const { data, error } = await this.client
+          .from('dashboard_fundus_summary')
+          .select('*')
+          .order('exam_date', { ascending: false });
+        if (!error && data && data.length > 0) {
+          return data.map(r => ({
+            id: r.id,
+            examDate: r.exam_date,
+            location: r.location,
+            total: Number(r.total) || 0,
+            noDR: Number(r.no_dr) || 0,
+            mildNPDR: Number(r.mild_npdr) || 0,
+            moderateNPDR: Number(r.moderate_npdr) || 0,
+            severeNPDR: Number(r.severe_npdr) || 0,
+            pdr: Number(r.pdr) || 0,
+            poorView: Number(r.poor_view) || 0
+          }));
+        }
+      } catch (e) {
+        console.warn('Fallback to local dashboard fundus:', e);
+      }
+    }
+    return this.getLocal<DashboardFundusSummary[]>(LS_KEYS.DASHBOARD_FUNDUS, INITIAL_DASHBOARD_FUNDUS);
+  }
+
+  public async saveDashboardFundus(list: DashboardFundusSummary[]): Promise<void> {
+    this.setLocal(LS_KEYS.DASHBOARD_FUNDUS, list);
+    if (this.isConnected && this.client) {
+      try {
+        const rows = list.map(r => ({
+          id: r.id,
+          exam_date: r.examDate,
+          location: r.location,
+          total: r.total,
+          no_dr: r.noDR,
+          mild_npdr: r.mildNPDR,
+          moderate_npdr: r.moderateNPDR,
+          severe_npdr: r.severeNPDR,
+          pdr: r.pdr,
+          poor_view: r.poorView,
+          updated_at: new Date().toISOString()
+        }));
+        await this.client.from('dashboard_fundus_summary').upsert(rows);
+      } catch (e) {
+        console.warn('Could not sync fundus summaries to Supabase:', e);
+      }
+    }
+  }
+
+  // ซิงก์ข้อมูลจาก Google Sheet เดิม ไปยัง Supabase โดยตรง
+  public async syncGoogleSheetDataToSupabase(): Promise<{ success: boolean; message: string; count: number }> {
+    if (!this.client || !this.isConnected) {
+      // บันทึกลง local ทันที
+      this.setLocal(LS_KEYS.SERVICE_UNIT_STATS, INITIAL_SERVICE_UNIT_STATS);
+      this.setLocal(LS_KEYS.DASHBOARD_FUNDUS, INITIAL_DASHBOARD_FUNDUS);
+      return {
+        success: true,
+        count: INITIAL_SERVICE_UNIT_STATS.length + INITIAL_DASHBOARD_FUNDUS.length,
+        message: 'นำเข้าข้อมูล Google Sheet เดิมเข้าสู่ระบบ Local Storage สำเร็จเรียบร้อย (พร้อมแสดงผลทันที)'
+      };
+    }
+
+    try {
+      const serviceRows = INITIAL_SERVICE_UNIT_STATS.map(s => ({
+        service_name: s.serviceName,
+        patient_count: s.patientCount,
+        updated_at: new Date().toISOString()
+      }));
+      const fundusRows = INITIAL_DASHBOARD_FUNDUS.map(f => ({
+        id: f.id,
+        exam_date: f.examDate,
+        location: f.location,
+        total: f.total,
+        no_dr: f.noDR,
+        mild_npdr: f.mildNPDR,
+        moderate_npdr: f.moderateNPDR,
+        severe_npdr: f.severeNPDR,
+        pdr: f.pdr,
+        poor_view: f.poorView,
+        updated_at: new Date().toISOString()
+      }));
+
+      const { error: err1 } = await this.client.from('dashboard_service_stats').upsert(serviceRows);
+      const { error: err2 } = await this.client.from('dashboard_fundus_summary').upsert(fundusRows);
+
+      if (err1 || err2) {
+        const errMsg = (err1 || err2)?.message;
+        return {
+          success: false,
+          count: 0,
+          message: `Supabase Error: ${errMsg}. แนะนำให้กดแท็บ "SQL Schema" แล้วรันคำสั่งสร้างตารางใน Supabase ก่อน`
+        };
+      }
+
+      this.setLocal(LS_KEYS.SERVICE_UNIT_STATS, INITIAL_SERVICE_UNIT_STATS);
+      this.setLocal(LS_KEYS.DASHBOARD_FUNDUS, INITIAL_DASHBOARD_FUNDUS);
+
+      return {
+        success: true,
+        count: serviceRows.length + fundusRows.length,
+        message: `นำเข้าข้อมูล Google Sheet (หน่วยบริการ 41 แห่ง และประวัติคัดกรองจอตา 7 รอบ) เข้า Supabase สำเร็จเรียบร้อยแล้ว!`
+      };
+    } catch (e: any) {
+      return {
+        success: false,
+        count: 0,
+        message: e.message || 'เกิดข้อผิดพลาดในการซิงก์ข้อมูล'
+      };
+    }
+  }
+
   // BULK RESET / RESTORE DEMO
   public resetToDefaultDemoData() {
     this.setLocal(LS_KEYS.PATIENTS, INITIAL_PATIENTS);
@@ -514,12 +772,16 @@ export class SupabaseManager {
     this.setLocal(LS_KEYS.TELEMED_RECORDS, INITIAL_TELEMED_RECORDS);
     this.setLocal(LS_KEYS.LAB_RECORDS, INITIAL_LAB_RECORDS);
     this.setLocal(LS_KEYS.DOWNLOAD_FILES, INITIAL_DOWNLOAD_FILES);
+    this.setLocal(LS_KEYS.SERVICE_UNIT_STATS, INITIAL_SERVICE_UNIT_STATS);
+    this.setLocal(LS_KEYS.DASHBOARD_FUNDUS, INITIAL_DASHBOARD_FUNDUS);
   }
 
   // EXPORT ALL DATA AS JSON
   public async exportAllData() {
     return {
       exportedAt: new Date().toISOString(),
+      serviceUnitStats: await this.getServiceUnitStats(),
+      dashboardFundus: await this.getDashboardFundus(),
       patients: await this.getPatients(),
       fundusDates: await this.getFundusDates(),
       fundusRecords: await this.getFundusRecords(),
@@ -529,6 +791,7 @@ export class SupabaseManager {
       downloadFiles: await this.getDownloadFiles()
     };
   }
+
 
   // IMPORT DATA FROM JSON
   public importJsonData(data: any): { success: boolean; message: string } {

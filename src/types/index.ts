@@ -171,9 +171,28 @@ export interface Hospital {
   name: string;
 }
 
+export interface ServiceUnitStat {
+  serviceName: string;
+  patientCount: number;
+}
+
+export interface DashboardFundusSummary {
+  id: string;
+  examDate: string; // e.g. '2569-10-01'
+  location: string;
+  total: number;
+  noDR: number;
+  mildNPDR: number;
+  moderateNPDR: number;
+  severeNPDR: number;
+  pdr: number;
+  poorView: number;
+}
+
 export interface LabNormal {
   min: number | null;
   max: number | null;
   unit: string;
   description: string;
 }
+

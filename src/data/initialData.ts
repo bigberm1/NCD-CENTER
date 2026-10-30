@@ -6,8 +6,11 @@ import {
   TelemedRecord,
   LabRecord,
   DownloadFile,
-  Hospital
+  Hospital,
+  ServiceUnitStat,
+  DashboardFundusSummary
 } from '../types';
+
 
 export const INITIAL_HOSPITALS: Hospital[] = [
   { code: '05869', name: 'PCU โฮงยาไทย (กลุ่มงานเวชกรรมสังคม รพศ.เชียงราย)' },
@@ -485,3 +488,137 @@ export const INITIAL_DOWNLOAD_FILES: DownloadFile[] = [
     fileType: 'application/pdf'
   }
 ];
+
+// ข้อมูลจาก Google Sheet เดิม (ชีต dashboard: จำนวนผู้ป่วยตามหน่วยบริการ 41 แห่ง)
+export const INITIAL_SERVICE_UNIT_STATS: ServiceUnitStat[] = [
+  { serviceName: 'ศูนย์สุขภาพชุมชนเมืองเชียงราย (PCU)', patientCount: 3105 },
+  { serviceName: 'ห้วยสัก', patientCount: 1940 },
+  { serviceName: 'บ้านดู่', patientCount: 1890 },
+  { serviceName: 'ป่าอ้อดอนชัย', patientCount: 1617 },
+  { serviceName: 'แม่ยาว', patientCount: 1513 },
+  { serviceName: 'ดอยลาน', patientCount: 1378 },
+  { serviceName: 'สันทราย', patientCount: 1366 },
+  { serviceName: 'รพศ.เบอร์ 4, 14', patientCount: 1363 },
+  { serviceName: 'ท่าสาย', patientCount: 1330 },
+  { serviceName: 'สันตาลเหลือง', patientCount: 1167 },
+  { serviceName: 'สันหนอง', patientCount: 1002 },
+  { serviceName: 'ริมกก', patientCount: 843 },
+  { serviceName: 'น้ำลัด', patientCount: 834 },
+  { serviceName: 'แม่กรณ์', patientCount: 809 },
+  { serviceName: 'เรือนจำกลาง', patientCount: 695 },
+  { serviceName: 'ดอยฮาง', patientCount: 614 },
+  { serviceName: 'ร่องปลาขาว', patientCount: 605 },
+  { serviceName: 'โล๊ะป่าตุ้ม', patientCount: 529 },
+  { serviceName: 'โป่งพระบาท', patientCount: 511 },
+  { serviceName: 'ปางขอน', patientCount: 483 },
+  { serviceName: 'รอบเวียง', patientCount: 478 },
+  { serviceName: 'ร่องเบ้อ', patientCount: 450 },
+  { serviceName: 'หัวฝาย', patientCount: 403 },
+  { serviceName: 'แม่ข้าวต้ม', patientCount: 336 },
+  { serviceName: 'พนาสวรรค์', patientCount: 304 },
+  { serviceName: 'ป่ายางมนต์', patientCount: 304 },
+  { serviceName: 'นางแล', patientCount: 261 },
+  { serviceName: 'รวมมิตร', patientCount: 261 },
+  { serviceName: 'ดงเทพนิมิตร', patientCount: 260 },
+  { serviceName: 'ปางริมกรณ์', patientCount: 255 },
+  { serviceName: 'ท่าสุด', patientCount: 226 },
+  { serviceName: 'ห้วยชมภู', patientCount: 193 },
+  { serviceName: 'ห้วยแม่ซ้าย', patientCount: 158 },
+  { serviceName: 'รพ.เชียงราย', patientCount: 91 },
+  { serviceName: 'จะคือ', patientCount: 72 },
+  { serviceName: 'โล๊ะป่าห้า', patientCount: 58 },
+  { serviceName: 'นอกเขต อ.เมืองเชียงราย', patientCount: 50 },
+  { serviceName: 'รพ.โอเวอร์บรุ๊ค', patientCount: 1 },
+  { serviceName: 'รพ.ศรีบุรินทร์', patientCount: 1 },
+  { serviceName: 'คลินิกหมอครอบครัว (PCC)', patientCount: 0 },
+  { serviceName: 'รพ.ค่ายเม็งรายมหาราช', patientCount: 0 }
+];
+
+// ข้อมูลจาก Google Sheet เดิม (ชีต dashboard: ผลการตรวจคัดกรองจอประสาทตาเบาหวาน)
+export const INITIAL_DASHBOARD_FUNDUS: DashboardFundusSummary[] = [
+  {
+    id: 'f-summary-1',
+    examDate: '2569-10-01',
+    location: 'สันทราย',
+    total: 137,
+    noDR: 113,
+    mildNPDR: 9,
+    moderateNPDR: 14,
+    severeNPDR: 1,
+    pdr: 0,
+    poorView: 0
+  },
+  {
+    id: 'f-summary-2',
+    examDate: '2569-10-12',
+    location: 'สันทราย',
+    total: 99,
+    noDR: 79,
+    mildNPDR: 5,
+    moderateNPDR: 15,
+    severeNPDR: 0,
+    pdr: 0,
+    poorView: 0
+  },
+  {
+    id: 'f-summary-3',
+    examDate: '2569-10-15',
+    location: 'บ้านดู่',
+    total: 147,
+    noDR: 121,
+    mildNPDR: 6,
+    moderateNPDR: 20,
+    severeNPDR: 0,
+    pdr: 0,
+    poorView: 0
+  },
+  {
+    id: 'f-summary-4',
+    examDate: '2569-10-16',
+    location: 'บ้านดู่',
+    total: 178,
+    noDR: 126,
+    mildNPDR: 16,
+    moderateNPDR: 28,
+    severeNPDR: 6,
+    pdr: 1,
+    poorView: 0
+  },
+  {
+    id: 'f-summary-5',
+    examDate: '2569-10-22',
+    location: 'ดงเทพนิมิตร',
+    total: 74,
+    noDR: 53,
+    mildNPDR: 2,
+    moderateNPDR: 19,
+    severeNPDR: 0,
+    pdr: 0,
+    poorView: 0
+  },
+  {
+    id: 'f-summary-6',
+    examDate: '2569-10-29',
+    location: 'ท่าสาย',
+    total: 141,
+    noDR: 107,
+    mildNPDR: 13,
+    moderateNPDR: 20,
+    severeNPDR: 0,
+    pdr: 0,
+    poorView: 0
+  },
+  {
+    id: 'f-summary-7',
+    examDate: '2569-10-30',
+    location: 'ท่าสาย',
+    total: 118,
+    noDR: 87,
+    mildNPDR: 6,
+    moderateNPDR: 20,
+    severeNPDR: 2,
+    pdr: 2,
+    poorView: 0
+  }
+];
+

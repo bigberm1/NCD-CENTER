@@ -22,8 +22,11 @@ import {
   TelemedRecord,
   LabRecord,
   DownloadFile,
-  User
+  User,
+  ServiceUnitStat,
+  DashboardFundusSummary
 } from './types';
+
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>('home');
@@ -44,6 +47,8 @@ export default function App() {
   const [telemedRecords, setTelemedRecords] = useState<TelemedRecord[]>([]);
   const [labRecords, setLabRecords] = useState<LabRecord[]>([]);
   const [downloadFiles, setDownloadFiles] = useState<DownloadFile[]>([]);
+  const [serviceUnitStats, setServiceUnitStats] = useState<ServiceUnitStat[]>([]);
+  const [dashboardFundus, setDashboardFundus] = useState<DashboardFundusSummary[]>([]);
   const [currentUser, setCurrentUser] = useState<User>(supabaseManager.getCurrentUser());
   const [supabaseConnected, setSupabaseConnected] = useState(supabaseManager.getStatus().isConnected);
   const [loading, setLoading] = useState(true);
@@ -52,14 +57,16 @@ export default function App() {
   const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
-      const [pts, fDates, fRecs, tDates, tRecs, lRecs, dFiles] = await Promise.all([
+      const [pts, fDates, fRecs, tDates, tRecs, lRecs, dFiles, sStats, dFundus] = await Promise.all([
         supabaseManager.getPatients(),
         supabaseManager.getFundusDates(),
         supabaseManager.getFundusRecords(),
         supabaseManager.getTelemedDates(),
         supabaseManager.getTelemedRecords(),
         supabaseManager.getLabRecords(),
-        supabaseManager.getDownloadFiles()
+        supabaseManager.getDownloadFiles(),
+        supabaseManager.getServiceUnitStats(),
+        supabaseManager.getDashboardFundus()
       ]);
 
       setPatients(pts);
@@ -69,6 +76,8 @@ export default function App() {
       setTelemedRecords(tRecs);
       setLabRecords(lRecs);
       setDownloadFiles(dFiles);
+      setServiceUnitStats(sStats);
+      setDashboardFundus(dFundus);
       setSupabaseConnected(supabaseManager.getStatus().isConnected);
     } catch (err) {
       console.error('Error loading clinic data:', err);
@@ -76,6 +85,7 @@ export default function App() {
       setLoading(false);
     }
   }, []);
+
 
   useEffect(() => {
     loadAllData();
@@ -234,8 +244,12 @@ export default function App() {
                   fundusDates={fundusDates}
                   fundusRecords={fundusRecords}
                   labRecords={labRecords}
+                  serviceUnitStats={serviceUnitStats}
+                  dashboardFundus={dashboardFundus}
+                  onSyncComplete={loadAllData}
                 />
               )}
+
 
               {currentView === 'patients' && (
                 <PatientsView
