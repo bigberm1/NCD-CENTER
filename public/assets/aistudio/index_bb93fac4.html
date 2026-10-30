@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>NCD Center - โฮงยาไทย</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.11/css/dataTables.bootstrap5.min.css">
+
+  <!-- DataTables Buttons CSS -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css">
+
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+
+  <?!= include('css'); ?>
+  <?!= include('app'); ?>
+</head>
+
+<body>
+
+  <!-- ============ INITIAL PAGE LOADER ============ -->
+  <div id="initialPageLoader">
+    <div class="initial-loader-box">
+      <div class="initial-spinner"></div>
+      <div class="initial-loader-title">NCD Center</div>
+      <div class="initial-loader-text">Loading...</div>
+    </div>
+  </div>
+
+  <!-- ============ SEARCH LOADER ============ -->
+  <div id="searchLoader">
+    <div class="search-loader-box">
+      <div class="search-spinner"></div>
+      <div class="search-loader-title">Loading...</div>
+      <!-- <div class="search-loader-text">กำลังค้นหาข้อมูลผู้ป่วย</div> -->
+    </div>
+  </div>
+
+
+  <!-- ============ LOGIN SECTION ============ -->
+  <section id="loginSection">
+    <div class="min-vh-100 d-flex align-items-center justify-content-center pb-5 px-3">
+      <div class="w-100 mb-5" style="max-width: 420px;">
+        <div class="card border-0 shadow-sm">
+          <div class="text-center">
+            <div class="mt-3" style="font-size: 3.4rem; color: var(--primary);">
+              <!-- <i class="fa-solid fa-briefcase-medical"></i> -->
+              <i class="fa-solid fa-square-plus"></i>
+            </div>
+            <h3 class="mb-2" style="color: var(--primary); font-weight: 700;">NCD Center</h3>
+            <h5 class="text-muted">โฮงยาไทย</h5> <!-- <p class="small text-muted mt-1 mb-0">กรุณาเข้าสู่ระบบ</p> -->
+          </div>
+          <div class="card-body p-4">
+            <form id="loginForm" class="needs-validation" novalidate>
+              <div class="mb-3"> <label class="form-label mb-1"> <i class="fa-solid fa-user me-1"></i> Username </label>
+                <input type="text" id="loginUsername" class="form-control" required autocomplete="off">
+                <div class="invalid-feedback small">กรุณากรอก Username</div>
+              </div>
+              <div class="mb-3"> <label class="form-label mb-1"> <i class="fa-solid fa-lock me-1"></i> Password </label>
+                <div class="input-group"> <input type="password" id="loginPassword" class="form-control" required autocomplete="new-password">
+                  <!-- <button type="button" id="toggleLoginPassword" class="btn btn-outline-secondary" tabindex="-1" title="แสดง/ซ่อนรหัสผ่าน"> <i class="fa-solid fa-eye"></i> </button> -->
+                </div>
+                <div class="invalid-feedback small">กรุณากรอก Password</div>
+              </div>
+              <button type="submit" id="btnLogin" class="btn btn-primary w-100"> <i class="fa-solid fa-right-to-bracket me-1"></i>เข้าสู่ระบบ </button>
+              <p id="loginHint" class="small text-muted mt-4 mb-0 text-center" style="font-size: 0.7rem;"> ผู้พัฒนา :
+                BigBerm </p>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section> <!-- ============ MAIN APP ============ -->
+  <section id="appSection" class="d-none">
+    <div class="app-shell">
+      <aside id="appSidebar" class="app-sidebar">
+        <div class="sidebar-brand">
+          <div class="sidebar-brand-icon"><i class="fa-solid fa-square-plus"></i></div>
+          <div>
+            <div class="sidebar-brand-title">NCD Center</div>
+            <div class="sidebar-brand-subtitle">PCU โฮงยาไทย</div>
+          </div>
+          <button type="button" id="btnSidebarClose" class="sidebar-close" title="ซ่อนเมนู" aria-label="ซ่อนเมนู"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <nav class="sidebar-nav" aria-label="เมนูหลัก">
+          <button type="button" class="sidebar-menu active" data-view="home">
+            <i class="fa-solid fa-house"></i><span>หน้าหลัก</span>
+          </button>
+          <button type="button" class="sidebar-menu" data-view="patients">
+            <i class="fa-solid fa-users"></i><span>ทะเบียน</span>
+          </button>
+          <button type="button" class="sidebar-menu" data-view="fundus">
+            <i class="fa-solid fa-eye"></i><span>ตรวจตา</span>
+          </button>
+          <button type="button" class="sidebar-menu" data-view="lab">
+            <i class="fa-solid fa-flask-vial"></i><span>ตรวจเลือด</span>
+          </button>
+          <button type="button" class="sidebar-menu" data-view="foot">
+            <i class="fa-solid fa-shoe-prints"></i><span>ตรวจเท้า</span>
+          </button>
+          <button type="button" class="sidebar-menu" data-view="remission">
+            <i class="fa-solid fa-arrow-trend-down"></i><span>Remission</span>
+          </button>
+          <button type="button" class="sidebar-menu" data-view="telemed">
+            <i class="fa-solid fa-video"></i><span>TeleMed</span>
+          </button>
+          <button type="button" class="sidebar-menu" data-view="export43">
+            <i class="fa-solid fa-file-export"></i><span>ส่ง 43 แฟ้ม</span>
+          </button>
+          <button type="button" class="sidebar-menu" data-view="download">
+            <i class="fa-solid fa-circle-down"></i><span>ดาวน์โหลด</span>
+          </button>
+        </nav>
+        <!-- <div class="sidebar-bottom">
+          <div class="sidebar-developer"><i class="fa-solid fa-code"></i> BigBerm</div>
+          <div class="sidebar-developer"><i class="fa-regular fa-copyright"></i> All rights reserved.</div>
+        </div> -->
+      </aside>
+      <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+      <div class="app-main-wrap">
+        <header class="app-navbar">
+          <div class="d-flex align-items-center gap-2 min-w-0">
+            <button type="button" id="btnSidebarToggle" class="btn btn-light btn-sm sidebar-toggle" title="เมนู">
+              <i class="fa-solid fa-bars"></i>
+            </button>
+            <div class="navbar-page-title" id="navbarPageTitle">หน้าหลัก</div>
+          </div>
+          <div class="d-flex align-items-center gap-3">
+            <div class="navbar-user" id="navbarUser" style="cursor: pointer;" title="คลิกเพื่อเปลี่ยนรหัสผ่าน">
+              <span class="navbar-user-icon"><i class="fa-solid fa-user"></i></span>
+              <span id="currentUserName">-</span>
+            </div>
+            <button type="button" id="btnLogout" class="btn btn-danger-subtle btn-sm navbar-logout">
+              <i class="fa-solid fa-right-from-bracket me-1"></i>ออกจากระบบ
+            </button>
+          </div>
+        </header>
+
+        <main class="app-content">
+          <!-- HOME -->
+          <?!= include('home_page'); ?>
+          <?!= include('home_js'); ?>
+          <!-- PATIENTS -->
+          <?!= include('patients_page'); ?>
+          <?!= include('patients_css'); ?>
+          <!-- FUNDDUS -->
+          <?!= include('fundus_page'); ?>
+          <?!= include('fundus_css'); ?>
+          <!-- TELEMED -->
+          <?!= include('telemed_page'); ?>
+          <?!= include('telemed_css'); ?>
+          <!-- LAB -->
+          <?!= include('lab_page'); ?>
+          <?!= include('lab_js'); ?>
+          <?!= include('lab_css'); ?>
+          <!-- FOOT -->
+          <?!= include('foot_page'); ?>
+          <!-- REMISSION -->
+          <?!= include('remission_page'); ?>
+          <!-- EXPORT43 -->
+          <?!= include('export43_page'); ?>
+          <!-- DOWNLOAD -->
+          <?!= include('download_page'); ?>
+          <?!= include('download_js'); ?>
+
+
+        </main>
+      </div>
+    </div>
+  </section>
+  <!-- ============ PATIENT DETAIL MODAL ============ -->
+  <div class="modal fade patient-detail-modal" id="patientDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content border-0">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="fa-solid fa-user me-2"></i>ข้อมูลผู้ป่วย</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+        </div>
+        <div class="modal-body p-3 p-lg-4" id="patientDetailBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PERSON FORM MODAL ============ -->
+  <div class="modal fade" id="personModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-fullscreen-lg-down modal-xl modal-dialog-scrollable">
+      <div class="modal-content border-0">
+        <div class="modal-header modal-header-custom border-0">
+          <h5 class="modal-title text-white" id="personModalTitle">
+            <i class="fa-solid fa-user-pen me-2"></i><span>ฟอร์มข้อมูลบุคคล</span>
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form id="personForm" class="needs-validation" novalidate> <input type="hidden" id="f_serviceCode">
+          <div class="modal-body bg-form">
+            <!-- Section 1: Basic -->
+            <fieldset class="fieldset-card">
+              <legend class="fieldset-title">ข้อมูลพื้นฐาน</legend>
+              <div class="row g-2">
+                <div class="col-md-2"> <label class="form-label">HN <span class="text-danger">*</span></label> <input type="text" class="form-control" id="f_hn" required>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-2"> <label class="form-label">เลข 13 หลัก <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control" id="f_cid13" maxlength="13" minlength="13" required>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-2"> <label class="form-label">คำนำหน้า <span class="text-danger">*</span></label>
+                  <select class="form-select" id="f_prefix" required> <option value="">--เลือก--</option> </select>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-3"> <label class="form-label">ชื่อ <span class="text-danger">*</span></label> <input type="text" class="form-control" id="f_firstName" required>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-3"> <label class="form-label">นามสกุล <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control" id="f_lastName" required>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-3"> <label class="form-label">วันเกิด <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control th-datepicker" id="f_birthDate" data-required="true" placeholder="dd/mm/ปี พ.ศ." required>
+                  <div class="invalid-feedback">จำเป็น (เลือกวันเกิดจากปฏิทิน)</div>
+                </div>
+              </div>
+            </fieldset>
+            <!-- Section 2: Address -->
+            <fieldset class="fieldset-card">
+              <legend class="fieldset-title">ที่อยู่</legend>
+              <div class="row g-2">
+                <div class="col-md-2">
+                  <label class="form-label">บ้านเลขที่ <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control" id="f_houseNo" required>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label">หมู่ <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control" id="f_moo" required>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">ชื่อหมู่บ้าน 33 ชุมชน <span class="text-danger">*</span></label>
+                  <select class="form-select" id="f_village33" required>
+                <option value="">--เลือกหมู่บ้าน--</option>
+              </select>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">ชื่อหมู่บ้านนอกเขต <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control" id="f_villageOutside" required>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">ตำบล <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control bg-white" id="f_tambon" required>
+                  <div class="form-text small">กรอกชื่อตำบล</div>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">อำเภอ <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control" id="f_amphoe" required readonly>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">จังหวัด <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control" id="f_province" required readonly>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">เบอร์โทร <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control" id="f_phone" maxlength="10" minlength="10" required>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Section 3: Service & Rights -->
+            <fieldset class="fieldset-card">
+              <legend class="fieldset-title">หน่วยบริการและสิทธิ</legend>
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <label class="form-label">เลือกหน่วยบริการ <span class="text-danger">*</span></label>
+                  <select class="form-select" id="f_serviceSelect">
+                    <option value="">--เลือก รหัส - ชื่อหน่วยบริการ--</option>
+                  </select>
+                  <div class="invalid-feedback">จำเป็น (เลือกแล้วจะแยกรหัสและชื่ออัตโนมัติ)</div>
+                  <!-- <div class="form-text small">เลือกหน่วยบริการ → ระบบจะแยกรหัสและชื่อหน่วยบริการอัตโนมัติ</div> -->
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label">รหัสหน่วยบริการ</label>
+                  <input type="text" class="form-control" id="f_serviceCodeDisplay" readonly required>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">ชื่อหน่วยบริการ</label>
+                  <input type="text" class="form-control" id="f_serviceName" readonly required>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">สิทธิการรักษา <span class="text-danger">*</span></label>
+                  <select class="form-select" id="f_treatmentRight" required>
+                <option value="">--เลือกสิทธิการรักษา--</option>
+              </select>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Section 4: Chronic -->
+            <fieldset class="fieldset-card">
+              <legend class="fieldset-title">โรคเรื้อรัง</legend>
+              <div class="row g-2">
+                <div class="col-md-4">
+                  <label class="form-label">วันที่วินิจฉัย HT (ความดัน)</label>
+                  <input type="text" class="form-control th-datepicker" id="f_htDate" placeholder="dd/mm/ปี พ.ศ. (เว้นได้)">
+                  <div class="form-text small">เว้นได้ถ้ายังไม่มีโรค</div>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">วันที่วินิจฉัย DM (เบาหวาน)</label>
+                  <input type="text" class="form-control th-datepicker" id="f_dmDate" placeholder="dd/mm/ปี พ.ศ. (เว้นได้)">
+                  <div class="form-text small">เว้นได้ถ้ายังไม่มีโรค</div>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">วันที่วินิจฉัย DLP (ไขมัน)</label>
+                  <input type="text" class="form-control th-datepicker" id="f_dlpDate" placeholder="dd/mm/ปี พ.ศ. (เว้นได้)">
+                  <div class="form-text small">เว้นได้ถ้ายังไม่มีโรค</div>
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Section 5: Status & Notes + Death Date -->
+            <fieldset class="fieldset-card">
+              <legend class="fieldset-title">สถานะ วันที่ และบันทึก</legend>
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <label class="form-label">สถานะ <span class="text-danger">*</span></label>
+                  <select class="form-select" id="f_status" required>
+                <option value="">--เลือกสถานะ--</option>
+              </select>
+                  <div class="invalid-feedback">จำเป็น</div>
+                </div>
+                <div class="col-md-9" id="deathDateGroup">
+                  <label class="form-label">วันที่เสียชีวิต</label>
+                  <input type="text" class="form-control th-datepicker" id="f_deathDate" placeholder="dd/mm/ปี พ.ศ. (เว้นได้)">
+                  <div class="form-text small">เว้นได้ ถ้ายังไม่เสียชีวิต</div>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">บันทึกเพิ่มเติม</label>
+                  <textarea class="form-control" id="f_note" rows="3" placeholder="เว้นได้ ถ้าไม่มีข้อมูลเพิ่มเติม"></textarea>
+                </div>
+              </div>
+            </fieldset>
+          </div>
+          <div class="modal-footer border-0 bg-form-footer d-flex gap-2 justify-content-end flex-wrap py-2">
+            <button type="button" class="btn btn-outline-secondary px-3 btn-sm" data-bs-dismiss="modal">
+          <i class="fa-solid fa-xmark me-1"></i>ยกเลิก
+        </button>
+            <button type="submit" id="btnSubmitPerson" class="btn btn-primary px-4 btn-sm">
+          <i class="fa-solid fa-save me-1"></i><span>บันทึก</span>
+        </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CHANGE PASSWORD MODAL ============ -->
+  <div class="modal fade" id="changePasswordModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0">
+        <div class="modal-header modal-header-custom border-0">
+          <h5 class="modal-title text-white">
+            <i class="fa-solid fa-key me-2"></i>เปลี่ยนรหัสผ่าน
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form id="changePasswordForm" class="needs-validation" novalidate>
+          <div class="modal-body bg-form">
+            <div class="mb-3">
+              <label class="form-label">ชื่อผู้ใช้</label>
+              <input type="text" class="form-control" id="cp_username" readonly>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">รหัสผ่านเดิม <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <input type="password" class="form-control" id="cp_oldPassword" required>
+                <button type="button" class="btn btn-outline-secondary" id="toggleOldPassword" tabindex="-1" title="แสดง/ซ่อนรหัสผ่าน">
+                  <span class="password-toggle-text">แสดง</span>
+                </button>
+              </div>
+              <div class="invalid-feedback">จำเป็น</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">รหัสผ่านใหม่ <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <input type="password" class="form-control" id="cp_newPassword" required minlength="4">
+                <button type="button" class="btn btn-outline-secondary" id="toggleNewPassword" tabindex="-1" title="แสดง/ซ่อนรหัสผ่าน">
+                  <span class="password-toggle-text">แสดง</span>
+                </button>
+              </div>
+              <div class="invalid-feedback">จำเป็น (อย่างน้อย 4 ตัวอักษร)</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">ยืนยันรหัสผ่านใหม่ <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <input type="password" class="form-control" id="cp_confirmPassword" required minlength="4">
+                <button type="button" class="btn btn-outline-secondary" id="toggleConfirmPassword" tabindex="-1" title="แสดง/ซ่อนรหัสผ่าน">
+                  <span class="password-toggle-text">แสดง</span>
+                </button>
+              </div>
+              <div class="invalid-feedback">จำเป็น (อย่างน้อย 4 ตัวอักษร)</div>
+            </div>
+          </div>
+          <div class="modal-footer border-0 bg-form-footer d-flex gap-2 justify-content-end py-2">
+            <button type="button" class="btn btn-outline-secondary px-3 btn-sm" data-bs-dismiss="modal">
+              <i class="fa-solid fa-xmark me-1"></i>ยกเลิก
+            </button>
+            <button type="submit" id="btnChangePassword" class="btn btn-primary px-4 btn-sm">
+              <i class="fa-solid fa-save me-1"></i>บันทึก
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.0/dist/sweetalert2.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/th.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/all.min.js" crossorigin="anonymous"
+    data-auto-replace-svg="nest"></script>
+  <link rel="stylesheet"
+    href="https://earthchie.github.io/jquery.Thailand.js/jquery.Thailand.js/dist/jquery.Thailand.min.css">
+  <script src="https://earthchie.github.io/jquery.Thailand.js/jquery.Thailand.js/dependencies/JQL.min.js"></script>
+  <script src="https://earthchie.github.io/jquery.Thailand.js/jquery.Thailand.js/dependencies/typeahead.bundle.js">
+  </script>
+  <script src="https://earthchie.github.io/jquery.Thailand.js/jquery.Thailand.js/dist/jquery.Thailand.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.11/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.11/js/dataTables.bootstrap5.min.js"></script>
+
+
+  <!-- Export: Excel / PDF -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- JS Dependencies สำหรับ Excel และ PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <!-- DataTables Buttons JS -->
+  <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.print.min.js"></script>
+
+
+  <?!= include('js'); ?>
+  <?!= include('fundus_js'); ?>
+  <?!= include('telemed_js'); ?>
+</body>
+
+</html>

@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Sarabun', sans-serif;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print\:m-0,
+  .print\:m-0 * {
+    visibility: visible;
+  }
+  .print\:hidden {
+    display: none !important;
+  }
+  @page {
+    size: A5 landscape;
+    margin: 10mm;
+  }
+}

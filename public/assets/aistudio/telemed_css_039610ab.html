@@ -1,0 +1,174 @@
+<style>
+  /* ---------- TeleMedicine UI - Updated ---------- */
+  .telemed-date-btn {
+    border-left: 3px solid transparent !important;
+    transition: all .12s ease;
+    color: var(--text) !important;
+    background-color: var(--white) !important;
+    border-radius: 8px !important;
+    margin-bottom: .35rem;
+    border: 1px solid var(--border-soft) !important;
+    padding: .55rem .75rem !important;
+  }
+
+  .telemed-date-btn:hover {
+    background-color: var(--primary-50) !important;
+    border-color: var(--border) !important;
+    color: var(--text-strong) !important;
+  }
+
+  .telemed-date-btn.telemed-date-btn-active {
+    background-color: var(--primary) !important;
+    border-left: 3px solid var(--primary-hover) !important;
+    border-color: var(--primary) !important;
+    color: #ffffff !important;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(55, 65, 81, .2);
+  }
+
+  .telemed-date-btn.telemed-date-btn-active .text-muted {
+    color: rgba(255, 255, 255, 0.85) !important;
+  }
+
+  .telemed-date-btn.telemed-date-btn-active i.fa-chevron-right {
+    color: #ffffff !important;
+  }
+
+  .telemed-date-btn.telemed-date-btn-active .fw-semibold {
+    color: #ffffff !important;
+  }
+
+  #telemedEditingBanner {
+    background-color: var(--primary-50) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-strong) !important;
+    border-radius: 8px !important;
+    font-weight: 500;
+  }
+
+  #telemedEditingBanner i {
+    color: var(--primary) !important;
+  }
+
+  #telemedEditingBanner .btn-close {
+    filter: none;
+  }
+
+  #telemedTable {
+    font-size: 0.75rem;
+    border-collapse: separate !important;
+    border-spacing: 0;
+  }
+
+  #telemedTable thead th {
+    background-color: var(--primary-50);
+    color: var(--text-strong);
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+    border-top: 1px solid var(--border);
+    padding: .35rem .8rem .35rem .5rem;
+    white-space: nowrap;
+    position: relative;
+    font-size: 0.75rem;
+  }
+
+  #telemedTable thead th.no-sort,
+  #telemedTable thead th.sorting_disabled {
+    background-image: none !important;
+    padding-right: .5rem !important;
+  }
+
+  #telemedTable tbody td {
+    padding: .3rem .5rem;
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: middle;
+    color: var(--text);
+    font-size: 0.75rem;
+  }
+
+  #telemedTable tbody tr:hover td {
+    background-color: var(--primary-50) !important;
+  }
+
+  #telemedTable.dataTable tbody tr.odd td {
+    background-color: #ffffff;
+  }
+
+  #telemedTable.dataTable tbody tr.even td {
+    background-color: #fafbfc;
+  }
+
+  #telemedTable tbody tr.telemed-row-selected td {
+    background-color: var(--primary-50) !important;
+    font-weight: 600;
+  }
+
+  .telemed-action-btns {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: 4px;
+    white-space: nowrap;
+    width: max-content;
+  }
+
+  .telemed-action-btns .btn {
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .btn-telemed-delete-date,
+  .btn-telemed-delete-row {
+    transition: all .15s ease;
+  }
+
+  .btn-telemed-delete-date:hover,
+  .btn-telemed-delete-row:hover {
+    background-color: #dc2626 !important;
+    border-color: #dc2626 !important;
+    color: #ffffff !important;
+  }
+
+  .telemed-date-delete-wrap {
+    display: inline-flex;
+    margin-left: auto;
+    padding-left: .35rem;
+  }
+
+  #tf_hn.input-group>.invalid-feedback {
+    display: none;
+  }
+
+  #tf_hn.input-group.was-validated>input:invalid~.invalid-feedback,
+  #tf_hn.input-group>input.is-invalid~.invalid-feedback {
+    display: block;
+    width: 100%;
+    margin-top: .25rem;
+    font-size: .875em;
+  }
+
+  #telemedRecordForm .input-group .form-select,
+  #telemedRecordForm .input-group .form-control {
+    z-index: 1;
+  }
+
+  .telemed-disease-info {
+    font-size: 0.7rem;
+    line-height: 1.3;
+  }
+
+  .telemed-disease-item {
+    display: inline-block;
+    margin-right: 0.3rem;
+  }
+
+  .telemed-service-info {
+    font-size: 0.7rem;
+    line-height: 1.3;
+  }
+
+  .telemed-service-line {
+    display: block;
+  }
+</style>

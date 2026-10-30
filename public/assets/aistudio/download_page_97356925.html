@@ -1,0 +1,177 @@
+<style>
+  /* ===== Download module ===== */
+  #downloadView .dl-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: .75rem; flex-wrap: wrap; padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-soft, #eceef1);
+  }
+  #downloadView .dl-head-title { display: flex; align-items: center; gap: .7rem; }
+  #downloadView .dl-head-icon {
+    width: 42px; height: 42px; border-radius: 12px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--primary-soft, #eef0f3); color: var(--primary, #374151);
+    font-size: 1.1rem;
+  }
+  #downloadView .dl-head-sub { font-size: .8rem; color: var(--muted, #6b7280); }
+
+  /* file type cell */
+  .file-type { display: inline-flex; align-items: center; gap: .5rem; }
+  .file-type .ft-icon {
+    width: 32px; height: 32px; border-radius: 9px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: .95rem;
+  }
+  .file-type .ft-label { font-size: .75rem; font-weight: 700; letter-spacing: .03em; }
+  .file-thumb {
+    width: 38px; height: 38px; border-radius: 9px; object-fit: cover;
+    border: 1px solid var(--border, #e5e7eb); background: #fff; cursor: zoom-in;
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .file-thumb:hover { transform: scale(1.06); box-shadow: 0 4px 12px rgba(0, 0, 0, .15); }
+
+  /* ===== Upload modal ===== */
+  #downloadFileModal .modal-content { border-radius: 14px; overflow: hidden; }
+  #downloadFileModal .dl-file-label { font-size: .85rem; font-weight: 600; color: var(--text-strong, #1f2937); }
+
+  .dz {
+    position: relative; border: 2px dashed var(--border, #e5e7eb); border-radius: 14px;
+    background: var(--white, #fff); padding: 1.4rem 1rem; text-align: center; cursor: pointer;
+    transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+  }
+  .dz:hover { border-color: var(--primary, #374151); background: var(--primary-soft, #f6f8fc); }
+  .dz.dz-active {
+    border-color: var(--primary, #374151); background: var(--primary-soft, #f6f8fc);
+    box-shadow: 0 0 0 4px rgba(40, 89, 168, .10);
+  }
+  .dz.dz-invalid { border-color: var(--danger, #ef4444); }
+  .dz-empty .dz-icon { font-size: 2rem; color: var(--primary, #374151); opacity: .85; }
+  .dz-empty .dz-title { font-weight: 600; margin-top: .5rem; color: var(--text-strong, #1f2937); }
+  .dz-empty .dz-hint { font-size: .85rem; color: var(--muted, #6b7280); margin-top: .15rem; }
+  .dz-empty .dz-hint strong { color: var(--primary, #374151); }
+  .dz-empty .dz-note { font-size: .75rem; color: var(--muted-light, #9ca3af); margin-top: .6rem; }
+
+  .dz-preview { display: flex; align-items: center; gap: .85rem; text-align: left; }
+  .dz-thumb {
+    width: 56px; height: 56px; flex: 0 0 56px; border-radius: 12px; background: #f3f4f6;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+  }
+  .dz-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .dz-thumb i { font-size: 1.5rem; }
+  .dz-info { min-width: 0; flex: 1 1 auto; }
+  .dz-file-name {
+    font-weight: 600; color: var(--text-strong, #1f2937); font-size: .9rem;
+    line-height: 1.25; word-break: break-word;
+  }
+  .dz-file-meta { font-size: .78rem; color: var(--muted, #6b7280); margin-top: .15rem; }
+  .dz-remove { flex: 0 0 auto; }
+
+  /* ล็อกทั้งโมดัลระหว่างบันทึก */
+  #downloadFileModal.dl-busy .modal-content { pointer-events: none; }
+  #downloadFileModal.dl-busy .modal-header-custom { opacity: .85; }
+</style>
+
+<div id="downloadView" class="app-view d-none">
+  <div class="container-fluid">
+    <div class="card border-0 shadow">
+      <div class="card-header bg-white border-0">
+        <div class="dl-head">
+          <div class="dl-head-title">
+            <span class="dl-head-icon"><i class="fa-solid fa-circle-down"></i></span>
+            <div>
+              <h5 class="mb-0">ดาวน์โหลดไฟล์</h5>
+              <div class="dl-head-sub">รวมไฟล์เอกสารและแบบฟอร์มสำหรับดาวน์โหลด</div>
+            </div>
+          </div>
+          <button type="button" id="btnAddDownloadFile" class="btn btn-primary btn-sm d-none">
+            <i class="fa-solid fa-plus me-1"></i>เพิ่มไฟล์
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="downloadLoader" class="text-center py-5">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <div class="mt-2 text-muted small">กำลังโหลดข้อมูล...</div>
+        </div>
+        <div id="downloadContent" class="d-none">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle" id="downloadTable" style="width: 100%;">
+              <thead class="table-light">
+                <tr>
+                  <th class="text-center">ลำดับ</th>
+                  <th>ชื่อไฟล์</th>
+                  <th class="text-center">ชนิดไฟล์</th>
+                  <th>ขนาดไฟล์</th>
+                  <th>วันที่อัปเดตล่าสุด</th>
+                  <th class="text-center">ไฟล์</th>
+                  <th class="text-center">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody id="downloadTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Download File Modal (Admin Only) -->
+<div class="modal fade" id="downloadFileModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0">
+      <div class="modal-header modal-header-custom border-0">
+        <h5 class="modal-title text-white" id="downloadFileModalTitle">
+          <i class="fa-solid fa-cloud-arrow-up me-2"></i><span>จัดการไฟล์</span>
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="downloadFileForm" class="needs-validation" novalidate>
+        <div class="modal-body bg-form">
+          <input type="hidden" id="df_fileId">
+          <div class="mb-3">
+            <label class="form-label dl-file-label" for="df_fileName">ชื่อไฟล์ <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="df_fileName" placeholder="ระบุชื่อไฟล์ที่ต้องการแสดง" required>
+            <div class="invalid-feedback">กรุณาระบุชื่อไฟล์</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label dl-file-label">
+              ไฟล์แนบ <span class="text-danger df-req-mark">*</span>
+            </label>
+            <input type="file" id="df_fileUpload" class="d-none">
+            <div class="dz" id="df_dropzone">
+              <div class="dz-empty" id="df_dropzoneEmpty">
+                <i class="fa-solid fa-cloud-arrow-up dz-icon"></i>
+                <div class="dz-title">ลากไฟล์มาวางที่นี่</div>
+                <div class="dz-hint">หรือ <strong>คลิกเพื่อเลือกไฟล์</strong> จากเครื่อง</div>
+                <div class="dz-note">
+                  <i class="fa-solid fa-shield-halved me-1"></i>ไฟล์จะถูกบันทึกไว้ใน Google Drive ของระบบ
+                </div>
+              </div>
+              <div class="dz-preview d-none" id="df_filePreview">
+                <div class="dz-thumb" id="df_previewThumb"></div>
+                <div class="dz-info">
+                  <div class="dz-file-name" id="df_previewName"></div>
+                  <div class="dz-file-meta" id="df_previewMeta"></div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger dz-remove" id="df_btnRemoveFile" title="ลบไฟล์ที่เลือก">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+            </div>
+            <div class="text-danger small mt-1 d-none" id="df_fileError">กรุณาเลือกไฟล์</div>
+          </div>
+        </div>
+        <div class="modal-footer border-0 bg-form-footer d-flex gap-2 justify-content-end flex-wrap py-2">
+          <button type="button" class="btn btn-outline-secondary px-3 btn-sm" data-bs-dismiss="modal">
+            <i class="fa-solid fa-xmark me-1"></i>ยกเลิก
+          </button>
+          <button type="submit" id="btnSubmitDownloadFile" class="btn btn-primary px-4 btn-sm">
+            <i class="fa-solid fa-save me-1"></i><span>บันทึก</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,143 @@
+<div id="labView" class="app-view d-none">
+
+  <div class="page-heading mb-4">
+    <div>
+      <h3 class="page-title mb-1">ผลการตรวจเลือด</h3>
+      <p class="page-subtitle mb-0">แสดงผลการตรวจเลือดประจำหน่วยบริการเครือข่าย อ.เมืองเชียงราย</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="btnLabRefresh">
+        <i class="fa-solid fa-arrows-rotate me-1"></i>รีเฟรช
+      </button>
+      <button type="button" class="btn btn-sm btn-primary" onclick="showAllBloodTests()">
+        <i class="fa fa-list"></i> รายชื่อตรวจเลือดทั้งหมด
+      </button>
+    </div>
+  </div>
+
+
+
+  <div class="row g-4 mb-4">
+    <!-- CALENDAR CARD -->
+    <div class="col-xl-5 col-lg-6">
+      <div class="card minimal-card h-100">
+        <div class="calendar-header">
+          <button class="btn btn-sm btn-outline-light border-0" id="btnPrevMonth"><i
+              class="fa-solid fa-chevron-left"></i></button>
+          <h6 class="mb-0 text-white fw-bold calendar-header-text" id="calendarMonthYearText">กำลังโหลด...</h6>
+          <button class="btn btn-sm btn-outline-light border-0" id="btnNextMonth"><i
+              class="fa-solid fa-chevron-right"></i></button>
+        </div>
+        <div class="card-body p-0">
+          <div class="text-center py-2 bg-light border-bottom text-muted small">
+            วันที่มีบริการในเดือนนี้: <span id="totalServiceDays" class="fw-bold text-primary-custom">0</span> วัน |
+            ผู้รับบริการรวม: <span id="totalPatientsMonth" class="fw-bold text-primary-custom">0</span> คน
+          </div>
+          <div class="calendar-grid" id="calendarGrid">
+            <!-- ปฏิทิน Render จาก JS -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- UPLOAD CARD -->
+    <div class="col-xl-7 col-lg-6">
+      <div class="card minimal-card h-100">
+        <div class="card-header bg-white border-bottom-0 pt-3 pb-0">
+          <h5 class="fw-bold text-primary-custom">
+            <i class="fa-solid fa-file-excel me-2"></i>Upload ผลการตรวจเลือด (Excel)
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="upload-area-compact mb-3" id="uploadArea">
+            <div class="upload-icon">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+            </div>
+            <div class="upload-text">
+              <p class="upload-main-text">Choose a file or drag & drop it here</p>
+              <p class="upload-sub-text">.xlsx, .xls formats, up to 10MB</p>
+            </div>
+
+            <!-- ซ่อน input file ของเดิม -->
+            <input type="file" id="excelFileInput" style="display: none;" accept=".xlsx, .xls"
+              onchange="handleLabFileSelect(event)">
+
+            <!-- ปุ่ม Browse File -->
+            <button type="button" class="btn btn-outline-primary btn-sm upload-btn"
+              onclick="document.getElementById('excelFileInput').click()">
+              Browse File
+            </button>
+
+            <!-- แสดงชื่อไฟล์ที่เลือก -->
+            <div id="selectedFileInfo" class="selected-file-info d-none">
+              <i class="fa fa-file-excel me-2"></i>
+              <span id="labFileName" class="text-primary fw-bold"></span>
+              <button type="button" class="btn btn-sm btn-link text-danger ms-2" onclick="clearSelectedFile()">
+                <i class="fa fa-times"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2">
+            <button id="btnProcessExcel" class="btn btn-primary btn-custom btn-sm">
+              <i class="fa-solid fa-magnifying-glass me-1"></i> ตรวจสอบข้อมูล
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- DATA TABLE CARD -->
+  <div class="card minimal-card">
+    <div class="card-header bg-white pt-3 pb-2 d-flex justify-content-between align-items-center">
+      <h6 class="fw-bold mb-0 text-dark" id="tableTitleText">
+        <i class="fa-solid fa-table me-2"></i>รายการข้อมูลตรวจเลือด
+      </h6>
+      <div class="d-flex gap-2">
+        <button id="btnPrintOPDAll" class="btn btn-primary btn-sm d-none">
+          <i class="fa-solid fa-print me-1"></i> Print OPD ทั้งหมด
+        </button>
+        <button id="btnDeleteAllByDate" class="btn btn-danger btn-sm d-none">
+          <i class="fa-solid fa-trash-can me-1"></i> ลบ Lab วันนี้ทั้งหมด
+        </button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table id="bloodTestTable" class="table table-hover table-minimal align-middle w-100"
+          style="white-space: nowrap;">
+          <thead>
+            <tr>
+              <th>ID (วันที่+HN)</th>
+              <th>ชื่อ-สกุล</th>
+              <th>HN</th>
+              <th>หน่วยบริการ</th>
+              <th>FBS</th>
+              <th>HbA1C</th>
+              <th>BUN</th>
+              <th>Cr</th>
+              <th>TC</th>
+              <th>TG</th>
+              <th>HDL</th>
+              <th>LDL</th>
+              <th>วันที่รับบริการ</th>
+              <th>BP บน/ล่าง</th>
+              <th>น้ำหนัก</th>
+              <th>ส่วนสูง</th>
+              <th>eGFR</th>
+              <th class="text-center no-sort">จัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="bloodTestTableBody">
+            <tr>
+              <td colspan="18" class="text-center text-muted py-4">กรุณาเลือกวันที่จากปฏิทิน
+                หรืออัปโหลดไฟล์เพื่อดูข้อมูล</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>

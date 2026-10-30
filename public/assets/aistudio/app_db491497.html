@@ -1,0 +1,42 @@
+<script>
+(function (window) {
+  'use strict';
+
+  const NCDApp = window.NCDApp || {};
+
+  NCDApp.version = NCDApp.version || '1.0.0';
+  NCDApp.state = NCDApp.state || null;
+  NCDApp.core = NCDApp.core || {};
+  NCDApp.modules = NCDApp.modules || {};
+
+  NCDApp.el = NCDApp.el || function (id) {
+    return document.getElementById(id);
+  };
+
+  NCDApp.q = NCDApp.q || function (selector, root) {
+    return (root || document).querySelector(selector);
+  };
+
+  NCDApp.qa = NCDApp.qa || function (selector, root) {
+    return Array.prototype.slice.call((root || document).querySelectorAll(selector));
+  };
+
+  NCDApp.registerModule = function (name, api) {
+    if (!name) return;
+    NCDApp.modules[name] = api || {};
+  };
+
+  NCDApp.getModule = function (name) {
+    return NCDApp.modules[name] || null;
+  };
+
+  NCDApp.call = function (name, method) {
+    const mod = NCDApp.getModule(name);
+    if (!mod || typeof mod[method] !== 'function') return undefined;
+    const args = Array.prototype.slice.call(arguments, 2);
+    return mod[method].apply(mod, args);
+  };
+
+  window.NCDApp = NCDApp;
+})(window);
+</script>

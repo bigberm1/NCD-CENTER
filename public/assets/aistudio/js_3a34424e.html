@@ -1,0 +1,1809 @@
+<script>
+  (function () {
+  'use strict';
+
+  const state = {
+    currentUser: null,
+    personModal: null,
+    modalEl: null,
+    mode: 'create',
+    editingHn: null,
+    lastSearchHN: '',
+    lookups: null,
+    datepickers: {},
+    postSaveLoading: false,
+    patientData: [],
+    patientAllData: [],
+    patientTable: null,
+    patientPage: 1,
+    patientPageSize: 10,
+    patientTotal: 0,
+    patientFilteredTotal: 0,
+    patientSearch: '',
+    patientLoading: false,
+    patientListLoaded: false,
+    patientListVisible: false,
+    patientDiseaseFilters: [],
+    patientStatusFilter: '',
+    menuAccess: {},
+    patientDetailModal: null,
+    view: 'patients',
+    fundusDates: [],
+    selectedFundusDateId: null,
+    selectedFundusDate: null,
+    fundusRecords: [],
+    fundusDateTable: null,
+    fundusTable: null,
+    fundusFormVisible: false,
+    fundusIsEditing: false,
+    selectedFundusRecordId: null,
+    fundusResultOptions: [],
+    telemedDates: [],
+    selectedTelemedDateId: null,
+    selectedTelemedDate: null,
+    telemedRecords: [],
+    telemedTable: null,
+    telemedFormVisible: false,
+    telemedIsEditing: false,
+    selectedTelemedRecordId: null,
+    telemedHospitals: [],
+    telemedRooms: []
+  };
+
+  // Expose the shared application state to independent modules.
+  window.NCDApp = window.NCDApp || {};
+  const NCDApp = window.NCDApp;
+  NCDApp.state = state;
+
+  const LANG_THAI = {
+    emptyTable: 'ไม่มีรายการ',
+    info: 'แสดง _START_ ถึง _END_ จากทั้งหมด _TOTAL_ รายการ',
+    infoEmpty: 'แสดง 0 ถึง 0 จากทั้งหมด 0 รายการ',
+    infoFiltered: '(กรองจากทั้งหมด _MAX_ รายการ)',
+    lengthMenu: 'แสดง _MENU_ รายการ',
+    zeroRecords: 'ไม่พบรายการที่ตรงกัน',
+    search: 'ค้นหา:',
+    paginate: {
+      first: '«',
+      last: '»',
+      next: '›',
+      previous: '‹'
+    }
+  };
+
+  const SESSION_KEY = 'ncd_tree_session_v1';
+
+  function normalizeUser_(u) {
+    if (!u || typeof u !== 'object') return null;
+    if (!u.username) return null;
+    if (!u.token) return null;
+    const displayName = u.name || u.fullName;
+    if (!displayName) return null;
+    return {
+      username: String(u.username),
+      name: String(displayName),
+      fullName: String(displayName),
+      token: String(u.token),
+      role: String(u.role || '')
+    };
+  }
+  
+  function saveUserSession(user) {
+    try {
+      sessionStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify(user)
+      );
+    } catch (e) {}
+  }
+
+  function clearUserSession() {
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+    } catch (e) {}
+  }
+
+  function loadUserFromStorage() {
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      return normalizeUser_(JSON.parse(raw));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getCurrentUser() {
+    const user = resolveAndApplyUser_();
+    if (!user) return null;
+    if (!user.fullName) {
+      user.fullName = user.name || '';
+    }
+    if (!user.name) {
+      user.name = user.fullName || '';
+    }
+    return user;
+  }
+
+  function renderUserDisplay_(user) {
+    try {
+      const node = el('currentUserName');
+      if (node && user && user.name) node.textContent = user.name;
+      const btns = el('adminMenuButtons');
+      if (!btns) return;
+      const isAdmin = user && typeof user.role === 'string' && user.role.toLowerCase() === 'admin';
+      if (isAdmin) {
+        btns.classList.remove('d-none');
+        applyAdminNavStyles_();
+      } else {
+        btns.classList.add('d-none');
+      }
+    } catch (e) {}
+  }
+
+  function applyAdminNavStyles_() {
+    const active = String(state.view || 'ncd') === 'fundus' ? 'fundus' : 'ncd';
+    ['ncd', 'fundus'].forEach(function (v) {
+      const btn = document.querySelector('.nav-admin-btn[data-nav="' + v + '"]');
+      if (!btn) return;
+      btn.classList.remove('btn-primary', 'btn-outline-secondary');
+      if (v === active) {
+        btn.classList.add('btn-primary');
+      } else {
+        btn.classList.add('btn-outline-secondary');
+      }
+    });
+  }
+
+  function canAccessView_(view) {
+    if (!state.menuAccess || !Object.keys(state.menuAccess).length) return true;
+    return state.menuAccess[String(view || '')] === true;
+  }
+
+  function getFirstAllowedView_() {
+    const order = ['home','patients','fundus','lab','foot','remission','telemed','export43','download'];
+    for (let i = 0; i < order.length; i++) if (canAccessView_(order[i])) return order[i];
+    return null;
+  }
+
+  function applyMenuPermissions_(access) {
+    state.menuAccess = access || {};
+    document.querySelectorAll('.sidebar-menu[data-view]').forEach(function(btn){
+      const view = btn.getAttribute('data-view');
+      btn.classList.toggle('d-none', !canAccessView_(view));
+    });
+    const nav = document.querySelector('.sidebar-nav');
+    if (nav) nav.classList.add('menu-ready');
+  }
+
+  function switchView_(target) {
+    let which = String(target || 'patients');
+    if (!canAccessView_(which)) which = getFirstAllowedView_() || 'home';
+
+    // Reset/Init หน้าต่างๆ เมื่อเปลี่ยนเมนู
+    // Fundus
+    if (which !== 'fundus') {
+      NCDApp.call('fundus', 'resetPage');
+    }
+    // Telemed
+    if (which !== 'telemed') {
+      NCDApp.call('telemed', 'resetPage');
+    }
+    // Lab
+    if (which !== 'lab') {
+      if (window.NCDApp && window.NCDApp.lab && window.NCDApp.lab.resetPage) {
+        window.NCDApp.lab.resetPage();
+      }
+    }
+    // Download
+    if (which === 'download') {
+      NCDApp.call('download', 'initPage');
+    }
+
+    const views = ['home','patients','fundus','lab','foot','remission','telemed','export43','download'];
+    const titles = {home:'หน้าหลัก',patients:'รายชื่อผู้ป่วย',fundus:'ตรวจตา',lab:'ตรวจเลือด',foot:'ตรวจเท้า',remission:'Remission',telemed:'TeleMed',export43:'ส่ง 43 แฟ้ม',download:'ดาวน์โหลด'};
+    state.view = which;
+    views.forEach(function(v){
+      const n = el(v === 'home' ? 'homeView' : v === 'patients' ? 'patientsView' : v === 'fundus' ? 'fundusView' : v === 'lab' ? 'labView' : v === 'foot' ? 'footView' : v === 'remission' ? 'remissionView' : v === 'telemed' ? 'telemedView' : v === 'download' ? 'downloadView' : 'export43View');
+      if (n) n.classList.toggle('d-none', v !== which);
+    });
+    document.querySelectorAll('.sidebar-menu[data-view]').forEach(function(btn){ btn.classList.toggle('active', btn.getAttribute('data-view') === which); });
+    const title = el('navbarPageTitle'); if (title) title.textContent = titles[which] || '';
+    if (which === 'patients') {
+      if (state.patientListVisible && !state.patientListLoaded) fetchPatientList();
+      if (state.patientListVisible && state.patientListLoaded) { renderPatientTablePage_(); renderPatientPagination_(); }
+      setTimeout(function(){ const n=el('searchHN'); if(n) n.focus(); },80);
+    }
+    if (which === 'home') NCDApp.call('home', 'initPage');
+    if (which === 'fundus') NCDApp.call('fundus', 'initPage');
+    if (which === 'telemed') NCDApp.call('telemed', 'initPage');
+    if (which === 'lab') {
+      if (window.NCDApp && window.NCDApp.lab && window.NCDApp.lab.initPage) {
+        window.NCDApp.lab.initPage();
+      }
+    }
+  }
+
+  function resolveAndApplyUser_() {
+    const user = loadUserFromStorage();
+    if (user) {
+      state.currentUser = user;
+      renderUserDisplay_(user);
+    }
+    return user;
+  }
+
+  function resetWorkspace_() {
+    state.patientData = [];
+    state.patientAllData = [];
+    state.patientTable = null;
+    state.patientPage = 1;
+    state.patientTotal = 0;
+    state.patientFilteredTotal = 0;
+    state.patientSearch = '';
+    state.patientLoading = false;
+    state.patientListLoaded = false;
+    state.patientListVisible = false;
+    state.patientDiseaseFilters = [];
+    state.patientStatusFilter = '';
+    state.lastSearchHN = '';
+    state.menuAccess = {};
+    state.view = 'home';
+    document.body.classList.remove('sidebar-open');
+    updateSidebarToggleIcon_();
+    const area = el('patientListArea'); if (area) area.classList.add('d-none');
+    const showBtn = el('btnShowAllPatients'); if (showBtn) showBtn.classList.remove('d-none');
+    const refreshBtn = el('btnRefreshPatientList'); if (refreshBtn) refreshBtn.classList.add('d-none');
+    const search = el('patientListSearch'); if (search) search.value = '';
+    const status = el('patientStatusFilter'); if (status) status.value = '';
+    document.querySelectorAll('.disease-filter').forEach(function(b){ b.classList.remove('active'); });
+    document.querySelectorAll('.app-view').forEach(function(v){ v.classList.add('d-none'); });
+  }
+
+  function prepareMenuPending_() {
+    const nav = document.querySelector('.sidebar-nav');
+    if (nav) nav.classList.remove('menu-ready');
+    document.querySelectorAll('.sidebar-menu[data-view]').forEach(function(btn){ btn.classList.add('d-none'); });
+  }
+
+  function showLoginView() {
+    state.currentUser = null;
+    resetWorkspace_();
+    prepareMenuPending_();
+    clearUserSession();
+    hideInitialLoader();
+    hideSearchLoader();
+    el('loginSection').classList.remove('d-none');
+    el('appSection').classList.add('d-none');
+    el('searchHN').value = '';
+    el('searchForm').classList.remove('was-validated');
+    clearResults();
+    setTimeout(function () {
+      el('loginUsername').focus();
+    }, 100);
+  }
+
+  function showApp() {
+    resetWorkspace_();
+    prepareMenuPending_();
+    showInitialLoader();
+    el('loginSection').classList.add('d-none');
+    el('appSection').classList.remove('d-none');
+    const user = getCurrentUser();
+    if (user) renderUserDisplay_(user);
+    fetchLookups().then(function () {
+      hideInitialLoader();
+      const firstView = canAccessView_('home') ? 'home' : (getFirstAllowedView_() || 'home');
+      switchView_(firstView);
+      setTimeout(function () { const n=el('searchHN'); if(n) n.focus(); }, 120);
+    });
+  }
+
+  function handleNeedLogin() {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Session หมดอายุ',
+      text: 'กรุณาเข้าสู่ระบบใหม่',
+      confirmButtonColor: '#2859a8',
+      confirmButtonText: 'ตกลง'
+    }).then(function () { showLoginView(); });
+  }
+
+  function setBtnLoading(btn, loadingText) {
+    if (!btn) return;
+    btn.dataset.originalHtml = btn.innerHTML;
+    btn.dataset.originalClass = btn.className;
+    btn.disabled = true;
+    btn.classList.remove(
+      'btn-primary',
+      'btn-success',
+      'btn-danger',
+      'btn-warning',
+      'btn-info'
+    );
+    btn.classList.add('btn-light');
+    btn.style.color = '#212529';
+    btn.style.backgroundColor = '#e9ecef';
+    btn.style.borderColor = '#dee2e6';
+    btn.style.opacity = '1';
+    btn.innerHTML =
+      '<span class="app-loader"></span>' +
+      (loadingText != null ? loadingText : 'กำลังดำเนินการ...');
+  }
+
+  function resetBtn(btn) {
+    if (!btn) return;
+    btn.disabled = false;
+    if (btn.dataset.originalClass) {
+      btn.className = btn.dataset.originalClass;
+      delete btn.dataset.originalClass;
+    }
+    if (btn.dataset.originalHtml) {
+      btn.innerHTML = btn.dataset.originalHtml;
+      delete btn.dataset.originalHtml;
+    }
+    btn.style.color = '';
+    btn.style.backgroundColor = '';
+    btn.style.borderColor = '';
+    btn.style.opacity = '';
+  }
+
+  function el(id) { return document.getElementById(id); }
+
+  function showInitialLoader() {
+    const loader = el('initialPageLoader');
+    if (!loader) return;
+    loader.classList.remove('hide');
+    document.body.classList.add('page-loading');
+  }
+
+  function hideInitialLoader() {
+    const loader = el('initialPageLoader');
+    if (!loader) return;
+    loader.classList.add('hide');
+    document.body.classList.remove('page-loading');
+  }
+
+  function showSearchLoader() {
+    const loader = el('searchLoader');
+    if (!loader) return;
+    loader.classList.add('show');
+  }
+
+  function hideSearchLoader() {
+    const loader = el('searchLoader');
+    if (!loader) return;
+    loader.classList.remove('show');
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);
+    });
+  }
+  function isEmptyValue(v) {
+    if (v == null) return true;
+    const s = String(v).trim();
+    return s === '' || s === '-' || s === 'null' || s === 'undefined';
+  }
+
+  function formatThaiDateBE(rawVal) {
+    if (rawVal == null) return '';
+    const s = String(rawVal).trim();
+    if (!s) return '';
+    let d = null;
+    let y, m, day;
+    const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (iso) {
+      y = parseInt(iso[1], 10);
+      m = parseInt(iso[2], 10);
+      day = parseInt(iso[3], 10);
+      d = new Date(Date.UTC(y, m - 1, day));
+    } else {
+      // const slash = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      const slash = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+      if (slash) {
+        day = parseInt(slash[1], 10);
+        m = parseInt(slash[2], 10);
+        y = parseInt(slash[3], 10);
+        if (y < 100) y += 2500;
+        d = new Date(Date.UTC(y >= 2500 ? y - 543 : y, m - 1, day));
+      } else {
+        const parsed = new Date(s);
+        if (!isNaN(parsed.getTime())) d = parsed;
+      }
+    }
+    if (!d || isNaN(d.getTime())) return s;
+    const gY = d.getUTCFullYear();
+    const beY = gY < 2500 ? gY + 543 : gY;
+    return `${d.getUTCDate()}/${d.getUTCMonth() + 1}/${beY}`;
+  }
+
+  /* -------------------- Thai Flatpickr (B.E.) -------------------- */
+  function parseDMBE_toCE_(val) {
+    if (!val) return null;
+    const s = String(val).trim();
+    if (!s) return null;
+    // const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    const m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+    if (!m) return null;
+    let y = parseInt(m[3], 10);
+    if (y < 100) y += 2500;
+    const beY = y >= 2500 ? y : (y + 543);
+    const ceY = beY - 543;
+    const mo = parseInt(m[2], 10) - 1;
+    const da = parseInt(m[1], 10);
+    const d = new Date(ceY, mo, da);
+    if (isNaN(d.getTime())) return null;
+    return d;
+  }
+  function formatCE_toDMBE_(dateObj) {
+    if (!dateObj || !(dateObj instanceof Date) || isNaN(dateObj.getTime())) return '';
+    const d = String(dateObj.getDate());
+    const m = String(dateObj.getMonth() + 1);
+    const y = String(dateObj.getFullYear() + 543);
+    return `${d}/${m}/${y}`;
+  }
+  function fixBEYearOnCalendar(inst) {
+    try {
+      const cal = inst && inst.calendarContainer;
+      if (!cal) return;
+      const yearInput = cal.querySelector('.numInput.cur-year');
+      if (yearInput) {
+        yearInput.readOnly = true;
+        yearInput.setAttribute('autocomplete', 'off');
+        if (typeof yearInput.value === 'string' && yearInput.value.length) {
+          const ce = parseInt(yearInput.value, 10);
+          if (!isNaN(ce) && ce < 2500) {
+            yearInput.value = String(ce + 543);
+            yearInput.setAttribute('data-ce', String(ce));
+          }
+        }
+      }
+      const yearOptions = cal.querySelectorAll('.flatpickr-monthDropdown-years option');
+      if (yearOptions && yearOptions.length) {
+        for (let i = 0; i < yearOptions.length; i++) {
+          const opt = yearOptions[i];
+          const txt = (opt.textContent || '').trim();
+          const ce = parseInt(txt, 10);
+          if (!isNaN(ce) && ce < 2500) {
+            opt.textContent = String(ce + 543);
+          }
+        }
+      }
+    } catch (e) {}
+  }
+  function initThaiFlatpickrs() {
+    if (typeof flatpickr !== 'function') return;
+    const inputs = document.querySelectorAll('input');
+    inputs.forEach(function (inp) {
+      if (!inp.hasAttribute('autocomplete')) {
+        inp.setAttribute('autocomplete', 'off');
+      }
+    });
+    const inputsTh = document.querySelectorAll('input.th-datepicker');
+    const thaiLocale = (typeof flatpickr !== 'undefined' && flatpickr.l10ns && flatpickr.l10ns.th) ? flatpickr.l10ns.th : null;
+    const baseConfig = {
+      allowInput: true,
+      clickOpens: true,
+      disableMobile: true,
+      dateFormat: 'Y-m-d',
+      monthSelectorType: 'static',
+      yearSelectorType: 'static',
+      wrap: false,
+      locale: thaiLocale,
+      onOpen: function (selectedDates, dateStr, instance) {
+        // ปิด autocomplete ของ input เมื่อเปิดปฏิทิน
+        instance.input.setAttribute('autocomplete', 'off');
+      },
+      parseDate: function (dateStr, formatStr) {
+        const d = parseDMBE_toCE_(dateStr);
+        if (d) return d;
+        const m1 = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(dateStr || '');
+        if (m1) return new Date(+m1[1], +m1[2] - 1, +m1[3]);
+        const m2 = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(dateStr || '');
+        if (m2) {
+          const yr = +m2[3];
+          const beOrCe = (yr > 2400) ? (yr - 543) : yr;
+          return new Date(beOrCe, +m2[2] - 1, +m2[1]);
+        }
+        return null;
+      },
+      formatDate: function (date, formatStr) {
+        if (!date || isNaN(date.getTime())) return '';
+        return formatCE_toDMBE_(date);
+      },
+      onReady: function (selectedDates, dateStr, instance) {
+        fixBEYearOnCalendar(instance);
+      },
+      onOpen: function (selectedDates, dateStr, instance) {
+        fixBEYearOnCalendar(instance);
+      },
+      onMonthChange: function (selectedDates, dateStr, instance) {
+        fixBEYearOnCalendar(instance);
+      },
+      onYearChange: function (selectedDates, dateStr, instance) {
+        fixBEYearOnCalendar(instance);
+      },
+      onClose: function (selectedDates, dateStr, instance) {
+        const input = instance.input;
+        const v = (input.value || '').trim();
+        if (!v) {
+          instance.clear(false);
+          return;
+        }
+        const ce = parseDMBE_toCE_(v);
+        if (ce) {
+          instance.setDate(ce, false);
+          input.value = formatCE_toDMBE_(ce);
+        } else {
+          const m1 = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(v);
+          if (m1) {
+            const d = new Date(+m1[1], +m1[2] - 1, +m1[3]);
+            instance.setDate(d, false);
+            input.value = formatCE_toDMBE_(d);
+          } else {
+            instance.clear(false);
+            input.value = '';
+          }
+        }
+      },
+      onChange: function (selectedDates, dateStr, instance) {
+        if (!selectedDates || !selectedDates[0]) {
+          instance.input.value = dateStr ? dateStr : '';
+          return;
+        }
+        instance.input.value = formatCE_toDMBE_(selectedDates[0]);
+      }
+    };
+    state.datepickers = state.datepickers || {};
+    inputsTh.forEach(function (inp) {
+      if (state.datepickers[inp.id]) {
+        try { state.datepickers[inp.id].destroy(); } catch (e) {}
+      }
+      const cfg = Object.assign({}, baseConfig);
+      if (inp.id === 'f_htDate' || inp.id === 'f_dmDate' || inp.id === 'f_dlpDate' || inp.id === 'f_deathDate') {
+        cfg.defaultDate = null;
+        cfg.maxDate = new Date();
+        cfg.allowInput = true;
+      }
+      if (inp.id === 'f_birthDate') {
+        cfg.defaultDate = null;
+        cfg.maxDate = new Date();
+      }
+      const fp = flatpickr(inp, cfg);
+      state.datepickers[inp.id] = fp;
+    });
+  }
+  function setThaiDateValue(inputId, rawBE) {
+    const fp = state.datepickers[inputId];
+    if (!fp) {
+      const input = document.getElementById(inputId);
+      if (input) input.value = formatThaiDateBE(rawBE) || '';
+      return;
+    }
+    const input = fp.input;
+    const asStr = formatThaiDateBE(rawBE);
+    const asCE = parseDMBE_toCE_(asStr);
+    if (asCE) {
+      fp.setDate(asCE, false);
+      input.value = formatCE_toDMBE_(asCE);
+    } else {
+      fp.clear(false);
+      input.value = '';
+    }
+  }
+  function getThaiDateValue(inputId) {
+    const fp = state.datepickers[inputId];
+    if (fp && fp.selectedDates && fp.selectedDates[0]) {
+      return formatCE_toDMBE_(fp.selectedDates[0]);
+    }
+    const input = document.getElementById(inputId);
+    if (!input) return '';
+    const val = (input.value || '').trim();
+    const parsed = parseDMBE_toCE_(val);
+    return parsed ? formatCE_toDMBE_(parsed) : (val ? val.replace(/-/g,'/') : '');
+  }
+  function getThaiDateValueAsCEISO(inputId) {
+    const fp = state.datepickers[inputId];
+    let ceDate = null;
+    if (fp && fp.selectedDates && fp.selectedDates[0]) {
+      ceDate = fp.selectedDates[0];
+    } else {
+      const input = document.getElementById(inputId);
+      if (!input) return '';
+      const val = (input.value || '').trim();
+      if (!val) return '';
+      ceDate = parseDMBE_toCE_(val);
+      if (!ceDate) {
+        if (typeof dayjs === 'function') {
+          const dj = dayjs(val);
+          if (dj.isValid()) ceDate = dj.toDate();
+        }
+      }
+    }
+    if (!ceDate || isNaN(ceDate.getTime())) return '';
+    if (typeof dayjs === 'function') {
+      return dayjs(ceDate).format('YYYY-MM-DD');
+    }
+    const y = ceDate.getFullYear();
+    const m = String(ceDate.getMonth() + 1).padStart(2, '0');
+    const d = String(ceDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  function clearThaiDate(inputId) {
+    const fp = state.datepickers[inputId];
+    if (fp) fp.clear(true);
+    const input = document.getElementById(inputId);
+    if (input) input.value = '';
+  }
+
+  /* -------------------- Helpers -------------------- */
+  function toast(title, icon, timerMs) {
+    return Swal.fire({
+      icon: icon || 'success',
+      title: title || 'สำเร็จ',
+      toast: true,
+      position: 'top-end',
+      showConfirmButton: false,
+      timer: timerMs || 2000,
+      timerProgressBar: true
+    });
+  }
+  function showError(msg) {
+    return Swal.fire({
+      icon: 'error',
+      title: 'เกิดข้อผิดพลาด',
+      text: msg || 'กรุณาลองใหม่อีกครั้ง',
+      confirmButtonColor: '#2859a8',
+      confirmButtonText: 'ตกลง'
+    });
+  }
+  function confirmDialog(title, html, confirmText, danger) {
+    return Swal.fire({
+      title: title || 'ยืนยันการดำเนินการ',
+      html: html || '',
+      icon: danger ? 'warning' : 'question',
+      showCancelButton: true,
+      confirmButtonColor: danger ? '#374151' : '#374151',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: confirmText || 'ตกลง',
+      cancelButtonText: 'ยกเลิก'
+    });
+  }
+  function statusChipClass(st) {
+    switch (st) {
+      case 'รักษาอยู่': return 'status-live';
+      case 'รักษา รพ.สต.': return 'status-live';
+      case 'ติดตามไม่ได้': return 'status-miss';
+      case 'เสียชีวิต': return 'status-dead';
+      default: return 'status-miss';
+    }
+  }
+  function sideInfoRow(label, value, opts) {
+    opts = opts || {};
+    const isEmpty = opts.allowEmpty ? false : isEmptyValue(value);
+    const display = isEmpty
+      ? (opts.emptyText || '-')
+      : (opts.formatter ? opts.formatter(value) : escapeHtml(value));
+    const valueClass = 'side-info-value' + (isEmpty ? ' empty' : '');
+    return '<div class="side-info-row">' +
+      '<div class="side-info-label">' + escapeHtml(label) + '</div>' +
+      '<div class="' + valueClass + '">' + display + '</div>' +
+      '</div>';
+  }
+  function chronicChipRow(r) {
+    const chips = [];
+    if (!isEmptyValue(r.ht)) chips.push('<span class="chip chip-ht"><span class="fw-bold fs-4 ms-2" style="color: #357895;">HT </span> - ' + escapeHtml(formatThaiDateBE(r.ht)) + '</span>');
+    if (!isEmptyValue(r.dm)) chips.push('<span class="chip chip-dm"><span class="fw-bold fs-4 ms-2" style="color: #a7654c;">DM </span> - ' + escapeHtml(formatThaiDateBE(r.dm)) + '</span>');
+    if (!isEmptyValue(r.dlp)) chips.push('<span class="chip chip-dlp"><span class="fw-bold fs-4 ms-2" style="color: #7655a4;">DLP </span> - ' + escapeHtml(formatThaiDateBE(r.dlp)) + '</span>');
+    if (!chips.length) return '<div class="small text-muted mt-1">ยังไม่มีรายการวินิจฉัยโรคเรื้อรัง</div>';
+    return '<div class="chronic-tags">' + chips.join('') + '</div>';
+  }
+
+  function formatHN(hn) {
+    hn = String(hn ?? '').trim();
+    if (!hn) return '-';
+    hn = hn.replace(/\D/g, '');
+    if (!hn) return '-';
+    return hn;
+  }
+
+  function formatCID(cid) {
+    cid = String(cid || '').replace(/\D/g, '');
+    if (!cid) return '-';
+    if (cid.length === 13) {
+      return cid.replace(
+        /^(\d)(\d{4})(\d{5})(\d{2})(\d)$/,
+        '$1-$2-$3-$4-$5'
+      );
+    }
+    return cid;
+  }
+
+  function renderCard(r) {
+    const card = document.createElement('article');
+    card.className = 'person-card';
+    const fullName = [r.prefix, r.firstName, r.lastName].filter(Boolean).join(' ');
+    const layout = document.createElement('div');
+    layout.className = 'patient-detail-layout';
+
+    const mainCol = document.createElement('div');
+    mainCol.className = 'patient-main-col';
+    const mainCard = document.createElement('div');
+    mainCard.className = 'patient-main-card';
+    mainCard.innerHTML =
+      '<div class="patient-name-head">' +
+        '<div class="patient-fullname">' + escapeHtml(fullName || '(ไม่มีชื่อ)') + '</div>' +
+        '<div class="patient-ids">' +
+          '<span class="hn-pill">HN: ' + escapeHtml(formatHN(r.hn)) + '</span>' +
+          '<span class="cid-pill">เลขบัตร: ' + escapeHtml(formatCID(r.cid13) || '-') + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="side-info-list">' +
+        sideInfoRow('บ้านเลขที่', r.houseNo) +
+        sideInfoRow('หมู่', r.moo) +
+        sideInfoRow('ชื่อหมู่บ้าน 33 ชุมชน', r.village33) +
+        sideInfoRow('ชื่อหมู่บ้านนอกเขต', r.villageOutside) +
+        sideInfoRow('ตำบล', r.tambon) +
+        sideInfoRow('อำเภอ', r.amphoe) +
+        sideInfoRow('จังหวัด', r.province) +
+        sideInfoRow('เบอร์โทร', r.phone) +
+        sideInfoRow('วันเกิด', r.birthDate, { formatter: formatThaiDateBE }) +
+      '</div>';
+    mainCol.appendChild(mainCard);
+    layout.appendChild(mainCol);
+
+    const chronicCol = document.createElement('div');
+    chronicCol.className = 'patient-chronic-col';
+    const chronicCard = document.createElement('div');
+    chronicCard.className = 'patient-side-card';
+    chronicCard.innerHTML =
+      '<div class="side-card-title"><i class="fa-solid fa-stethoscope"></i> โรคประจำตัว</div>' +
+      '<div style="margin-top: .35rem;">' + chronicChipRow(r) + '</div>';
+    chronicCol.appendChild(chronicCard);
+    layout.appendChild(chronicCol);
+
+    const serviceCol = document.createElement('div');
+    serviceCol.className = 'patient-service-col';
+    const serviceCard = document.createElement('div');
+    serviceCard.className = 'patient-side-card';
+    serviceCard.innerHTML =
+      '<div class="side-card-title"><i class="fa-solid fa-hospital-user"></i> หน่วยบริการ & สิทธิ</div>' +
+      '<div class="side-info-list">' +
+        sideInfoRow('รหัสหน่วยบริการ', r.serviceCode) +
+        sideInfoRow('ชื่อหน่วยบริการ', r.serviceName) +
+        sideInfoRow('สิทธิการรักษา', r.treatmentRight) +
+      '</div>';
+    serviceCol.appendChild(serviceCard);
+    layout.appendChild(serviceCol);
+
+    const statusCol = document.createElement('div');
+    statusCol.className = 'patient-status-col';
+    const statusCard = document.createElement('div');
+    statusCard.className = 'patient-side-card';
+    statusCard.innerHTML =
+      '<div class="side-card-title"><i class="fa-solid fa-clipboard-check"></i> สถานะ</div>' +
+      '<div class="side-info-list">' +
+        '<div class="side-info-row">' +
+          '<div class="side-info-label">สถานะ</div>' +
+          '<div class="side-info-value"><span class="chip ' + statusChipClass(r.status) + '"><i class="fa-solid fa-circle-check"></i> ' + escapeHtml(r.status || '-') + '</span></div>' +
+        '</div>' +
+        sideInfoRow('วันที่เสียชีวิต', r.deathDate, { allowEmpty: true, formatter: formatThaiDateBE }) +
+        sideInfoRow('บันทึกเพิ่มเติม', r.note, { allowEmpty: true }) +
+      '</div>';
+    statusCol.appendChild(statusCard);
+    layout.appendChild(statusCol);
+
+    card.appendChild(layout);
+
+    const audit = document.createElement('div');
+    audit.className = 'meta-update';
+    audit.innerHTML =
+      '<div class="meta-left">' +
+        '<span class="meta-pill"><i class="fa-solid fa-clock-rotate-left me-1"></i>แก้ไขล่าสุด: <strong>' + escapeHtml(r.updateDate || '-') + '</strong></span>' +
+      '</div>' +
+      '<div class="meta-right">' +
+        '<span class="meta-pill"><i class="fa-solid fa-user-pen me-1"></i>ชื่อผู้แก้ไข: <strong>' + escapeHtml(r.updaterName || '-') + '</strong></span>' +
+      '</div>';
+    card.appendChild(audit);
+
+    const footer = document.createElement('div');
+    footer.className = 'person-card-footer';
+    const btnEdit = document.createElement('button');
+    btnEdit.className = 'btn btn-primary px-3 btn-sm';
+    btnEdit.innerHTML = '<i class="fa-solid fa-pen-to-square me-1"></i>แก้ไข';
+    btnEdit.addEventListener('click', function () { if(state.patientDetailModal) state.patientDetailModal.hide(); openEditModal(r); });
+    footer.appendChild(btnEdit);
+    card.appendChild(footer);
+
+    return card;
+  }
+
+  function fetchLookups() {
+    return new Promise(function (resolve) {
+      const user = getCurrentUser();
+      if (!user) {
+        resolve();
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            state.lookups = res;
+            populateAllSelects(res);
+            if (res.menuAccess) applyMenuPermissions_(res.menuAccess);
+            if (res.currentUser) {
+              const cu = normalizeUser_(res.currentUser);
+              if (cu) {
+                saveUserSession(cu);
+                state.currentUser = cu;
+                renderUserDisplay_(cu);
+              }
+            }
+          } else if (res && res.needLogin) {
+            handleNeedLogin();
+          }
+          resolve();
+        })
+        .withFailureHandler(function () {
+          resolve();
+        })
+        .getLookups(user);
+    });
+  }
+
+  function appendOptions(selectEl, list, firstLabel, firstValue) {
+    selectEl.innerHTML = '';
+    if (firstLabel) {
+      const f = document.createElement('option');
+      f.value = firstValue || '';
+      f.textContent = firstLabel;
+      selectEl.appendChild(f);
+    }
+    list.forEach(function (item) {
+      const o = document.createElement('option');
+      if (typeof item === 'string') {
+        o.value = item;
+        o.textContent = item;
+      } else {
+        o.value = JSON.stringify(item);
+        o.textContent = (item.code ? item.code + ' - ' : '') + (item.name || '');
+      }
+      selectEl.appendChild(o);
+    });
+  }
+  function populateAllSelects(lkp) {
+    appendOptions(el('f_prefix'), lkp.prefixes || [], '--เลือก--', '');
+    appendOptions(el('f_status'), lkp.statuses || [], '--เลือกสถานะ--', '');
+    appendOptions(el('f_treatmentRight'), lkp.treatmentRights || [], '--เลือกสิทธิการรักษา--', '');
+    appendOptions(el('f_village33'), lkp.villages33 || [], '--เลือกหมู่บ้าน 33--', '');
+    const hospitals = (lkp.hospitals || []).map(function (h) {
+      return { code: h.code, name: h.name };
+    });
+    appendOptions(el('f_serviceSelect'), hospitals, 'เลือก...', '');
+    appendOptions(el('fundusServiceSelect'), hospitals, '--เลือกหน่วยบริการ--', '');
+    const ffPrefix = el('ff_prefix');
+    if (ffPrefix) {
+      appendOptions(ffPrefix, (lkp.prefixes || []).slice(), '-', '');
+    }
+  }
+
+  function clearResults() {
+    const ra = el('resultsArea'); if (ra) ra.classList.add('d-none');
+    const nra = el('noResultsArea'); if (nra) nra.classList.add('d-none');
+    const cc = el('cardsContainer'); if (cc) cc.innerHTML = '';
+    state.lastSearchHN = '';
+    const rc = el('resultCount'); if (rc) rc.textContent = '0';
+    if (state.patientDetailModal) {
+      try { state.patientDetailModal.hide(); } catch (e) {}
+    }
+  }
+
+  function handleSearch(e, opts) {
+    if (e) e.preventDefault();
+    opts = opts || {};
+    const user = getCurrentUser();
+    if (!user) { handleNeedLogin(); return; }
+    const form = el('searchForm');
+    if (!form || !form.checkValidity()) { if(form) form.classList.add('was-validated'); return; }
+    form.classList.remove('was-validated');
+    const hn = el('searchHN').value.trim();
+    state.lastSearchHN = hn;
+    const btn = el('btnSearch');
+    if (!opts.skipBtnLoad && btn && btn.disabled) return;
+    showSearchLoader();
+    if (!opts.skipBtnLoad) setBtnLoading(btn, 'กำลังค้นหา...');
+    google.script.run
+      .withSuccessHandler(function (res) {
+        resetBtn(btn); hideSearchLoader();
+        if (!res) { showError('ค้นหาไม่สำเร็จ'); return; }
+        if (res.needLogin) { handleNeedLogin(); return; }
+        if (!res.success) { showError(res.message || 'ค้นหาไม่สำเร็จ'); return; }
+        if (res.found && res.data && res.data.length > 0) renderResults(res.data);
+        else renderNoResults();
+      })
+      .withFailureHandler(function (err) { resetBtn(btn); hideSearchLoader(); showError(err.message || 'Network error'); })
+      .searchByHN(hn, user);
+  }
+
+  function renderResults(records) {
+    const body = el('patientDetailBody');
+    if (!body) return;
+    body.innerHTML = '';
+    (records || []).forEach(function(r){ body.appendChild(renderCard(r)); });
+    if (state.patientDetailModal) state.patientDetailModal.show();
+  }
+
+  function renderNoResults() {
+    Swal.fire({
+      icon: 'info', title: 'ไม่พบข้อมูลผู้ป่วย',
+      text: 'ไม่พบข้อมูล HN นี้ในฐานข้อมูล',
+      confirmButtonText: 'ตกลง', confirmButtonColor: '#2859a8'
+    });
+  }
+
+  /* ---------- Patient List ---------- */
+
+  function getFilteredPatientData_() {
+    const all = Array.isArray(state.patientAllData) ? state.patientAllData : [];
+    const q = String(state.patientSearch || '').trim().toLowerCase();
+    const diseases = Array.isArray(state.patientDiseaseFilters) ? state.patientDiseaseFilters : [];
+    const status = String(state.patientStatusFilter || '').trim();
+    return all.filter(function(row){
+      if (q) {
+        const text = [row.hn,row.cid13,row.prefix,row.firstName,row.lastName,row.serviceName,row.tambon,row.village33,row.villageOutside,row.status]
+          .map(function(v){ return String(v || '').toLowerCase(); }).join(' ');
+        if (text.indexOf(q) === -1) return false;
+      }
+      if (diseases.length) {
+        const diseaseMatch = diseases.every(function(d){ return hasDisease(row[d]); });
+        if (!diseaseMatch) return false;
+      }
+      if (status && String(row.status || '').trim() !== status) return false;
+      return true;
+    });
+  }
+
+  function fetchPatientList() {
+    return new Promise(function(resolve){
+      const user = getCurrentUser();
+      if (!user) { handleNeedLogin(); resolve(); return; }
+      state.patientLoading = true;
+      const loading = el('patientTableLoading'); if (loading) loading.classList.remove('d-none');
+      google.script.run
+        .withSuccessHandler(function(res){
+          state.patientLoading = false;
+          if (loading) loading.classList.add('d-none');
+          if (!res) { showError('โหลดรายชื่อผู้ป่วยไม่สำเร็จ'); resolve(); return; }
+          if (res.needLogin) { handleNeedLogin(); resolve(); return; }
+          if (!res.success) { showError(res.message || 'โหลดรายชื่อผู้ป่วยไม่สำเร็จ'); resolve(); return; }
+          state.patientAllData = Array.isArray(res.data) ? res.data : [];
+          state.patientListLoaded = true;
+          state.patientListVisible = true;
+          state.patientTotal = state.patientAllData.length;
+          state.patientPage = 1;
+          state.patientFilteredTotal = state.patientTotal;
+          const cnt = el('patientListCount'); if (cnt) cnt.textContent = String(state.patientFilteredTotal);
+          const badge = el('patientRoleBadge');
+          if (badge) badge.textContent = res.isAdmin ? '(Admin)' : (res.role ? '(หน่วยบริการ: ' + res.role + ')' : '(ยังไม่กำหนด Role)');
+          const area = el('patientListArea'); if (area) area.classList.remove('d-none');
+          const showBtn = el('btnShowAllPatients'); if (showBtn) showBtn.classList.add('d-none');
+          const refreshBtn = el('btnRefreshPatientList'); if (refreshBtn) refreshBtn.classList.remove('d-none');
+          renderPatientTablePage_(); renderPatientPagination_();
+          resolve();
+        })
+        .withFailureHandler(function(err){
+          state.patientLoading = false;
+          if (loading) loading.classList.add('d-none');
+          showError(err.message || 'Network error'); resolve();
+        })
+        .getPatientListPage(user, 1, 0, '');
+    });
+  }
+
+  function showPatientList_() {
+    state.patientListVisible = true;
+    const area = el('patientListArea'); if (area) area.classList.remove('d-none');
+    if (state.patientListLoaded) {
+      const showBtn = el('btnShowAllPatients'); if (showBtn) showBtn.classList.add('d-none');
+      renderPatientTablePage_(); renderPatientPagination_();
+      return;
+    }
+    fetchPatientList();
+  }
+
+  function hasDisease(val){ return !isEmptyValue(val) && String(val).trim() !== ''; }
+
+  function renderPatientTablePage_(){
+    const tbl = el('patientTable'); if (!tbl) return;
+    const tbody = tbl.querySelector('tbody'); if (!tbody) return;
+    const filtered = getFilteredPatientData_();
+    state.patientFilteredTotal = filtered.length;
+    state.patientTotal = Array.isArray(state.patientAllData) ? state.patientAllData.length : 0;
+    const cnt = el('patientListCount'); if (cnt) cnt.textContent = String(state.patientFilteredTotal);
+    const size = state.patientPageSize || 10;
+    const pages = Math.max(1, Math.ceil(filtered.length / size));
+    state.patientPage = Math.min(Math.max(1, state.patientPage || 1), pages);
+    const fromIndex = (state.patientPage - 1) * size;
+    const data = filtered.slice(fromIndex, fromIndex + size);
+    tbody.innerHTML = '';
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-5">ไม่พบรายการผู้ป่วยตามเงื่อนไข</td></tr>';
+      return;
+    }
+    data.forEach(function(row){
+      const tr = document.createElement('tr');
+      const fullName = [row.prefix,row.firstName,row.lastName].filter(Boolean).join(' ');
+      // const disease = function(v){ return hasDisease(v) ? '<span class="dt-disease dt-disease-yes">มี</span>' : '<span class="dt-disease dt-disease-no">-</span>'; };
+
+      const disease = function(v, type){
+        if (!hasDisease(v)) {
+          return '<span class="dt-disease dt-disease-no">-</span>';
+        }
+        const config = {
+          HT: {
+            name: 'HT',
+            className: 'dt-disease-ht'
+          },
+          DM: {
+            name: 'DM',
+            className: 'dt-disease-dm'
+          },
+          DLP: {
+            name: 'DLP',
+            className: 'dt-disease-dlp'
+          }
+        };
+        const item = config[type] || {
+          name: type || '-',
+          className: ''
+        };
+        return '<span class="dt-disease ' + item.className + '">' +
+              item.name +
+              '</span>';
+      };
+
+      tr.innerHTML =
+        '<td>'+escapeHtml(formatHN(row.hn||''))+'</td>'+
+        '<td>'+escapeHtml(formatCID(row.cid13||''))+'</td>'+ 
+        '<td class="fw-bold" style="color: var(--primary);">'+escapeHtml(fullName||'-')+'</td>'+ 
+        '<td>'+escapeHtml(row.houseNo||'-')+'</td>'+ 
+        '<td>'+escapeHtml(row.moo||'-')+'</td>'+ 
+        '<td>'+escapeHtml(row.village33||'-')+'</td>'+ 
+        '<td>'+escapeHtml(row.villageOutside||'-')+'</td>'+ 
+        '<td>'+escapeHtml(row.tambon||'-')+'</td>'+ 
+        '<td>'+disease(row.ht, 'HT')+'</td>'+
+        '<td>'+disease(row.dm, 'DM')+'</td>'+
+        '<td>'+disease(row.dlp, 'DLP')+'</td>'+
+        '<td>'+escapeHtml(row.status||'-')+'</td>'+ 
+        '<td class="text-center"><button type="button" class="btn btn-outline-secondary btn-sm btn-show-info"><i class="fa-solid fa-eye me-1"></i>แสดงข้อมูล</button></td>';
+      tr.querySelector('.btn-show-info').addEventListener('click', function(){ showPatientFromTable(row); });
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderPatientPagination_(){
+    const box = el('patientPagination'); if (!box) return;
+    const total = state.patientFilteredTotal || 0, size = state.patientPageSize || 10, page = state.patientPage || 1;
+    const pages = Math.max(1, Math.ceil(total / size));
+    const from = total ? ((page-1)*size+1) : 0, to = Math.min(page*size,total);
+    let html = '<div class="patient-pagination-info">แสดง '+from+'–'+to+' จาก '+total+' รายการ</div><div class="patient-pagination-buttons">';
+    const btn = function(p,label,disabled,active){ return '<button type="button" class="btn '+(active?'btn-primary':'btn-outline-secondary')+' btn-sm patient-page-btn" data-page="'+p+'" '+(disabled?'disabled':'')+'>'+label+'</button>'; };
+    html += btn(page-1,'‹',page<=1,false);
+    const max=7; let a=Math.max(1,page-3), b=Math.min(pages,a+max-1); a=Math.max(1,b-max+1);
+    if(a>1) html += btn(1,'1',false,page===1)+(a>2?'<span class="px-1 text-muted">…</span>':'');
+    for(let i=a;i<=b;i++) html += btn(i,String(i),false,i===page);
+    if(b<pages) html += (b<pages-1?'<span class="px-1 text-muted">…</span>':'')+btn(pages,String(pages),false,page===pages);
+    html += btn(page+1,'›',page>=pages,false)+'</div>';
+    box.innerHTML = html;
+    box.querySelectorAll('[data-page]').forEach(function(bn){
+      bn.addEventListener('click', function(){
+        const p = Number(this.dataset.page);
+        if (p>0 && p<=pages) { state.patientPage=p; renderPatientTablePage_(); renderPatientPagination_(); }
+      });
+    });
+  }
+
+  function initPatientTable(){ renderPatientTablePage_(); renderPatientPagination_(); }
+
+  function showPatientFromTable(record) {
+    if (!record) return;
+    const hn = String(record.hn || '').trim();
+    if (!hn) return;
+    const user = getCurrentUser();
+    if (!user) { handleNeedLogin(); return; }
+    showSearchLoader();
+    google.script.run
+      .withSuccessHandler(function(res){
+        hideSearchLoader();
+        if(res && res.needLogin){ handleNeedLogin(); return; }
+        if(!res || !res.success || !res.found || !res.data || !res.data.length){
+          showError((res && res.message) || 'ไม่พบข้อมูลผู้ป่วย'); return;
+        }
+        state.lastSearchHN=hn;
+        const hnInput=el('searchHN'); if(hnInput) hnInput.value=hn;
+        renderResults(res.data);
+      })
+      .withFailureHandler(function(err){ hideSearchLoader(); showError(err.message||'Network error'); })
+      .searchByHN(hn,user);
+  }
+
+  function getExportRows_() {
+    return getFilteredPatientData_().map(function(r){
+      return {
+        'HN': formatHN(r.hn), '13 หลัก': formatCID(r.cid13),
+        'ชื่อ-นามสกุล':[r.prefix,r.firstName,r.lastName].filter(Boolean).join(' '),
+        'บ้านเลขที่':r.houseNo||'', 'หมู่':r.moo||'', 'ชื่อหมู่บ้าน':r.village33||'',
+        'หมู่บ้านนอกเขต':r.villageOutside||'', 'ตำบล':r.tambon||'',
+        'HT':hasDisease(r.ht)?'มี':'', 'DM':hasDisease(r.dm)?'มี':'', 'DLP':hasDisease(r.dlp)?'มี':'',
+        'สถานะ':r.status||'', 'หน่วยบริการ':r.serviceName||''
+      };
+    });
+  }
+
+  function exportPatientExcel_() {
+    if (typeof XLSX === 'undefined') { showError('ไม่พบระบบส่งออก Excel'); return; }
+    const rows = getExportRows_();
+    if (!rows.length) { showError('ไม่มีข้อมูลสำหรับส่งออก'); return; }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'รายชื่อผู้ป่วย');
+    XLSX.writeFile(wb, 'รายชื่อผู้ป่วย_' + new Date().toISOString().slice(0,10) + '.xlsx');
+  }
+
+  function toggleDeathDateVisibility() {
+    const statusVal = (el('f_status').value || '').trim();
+    const group = el('deathDateGroup');
+    if (!group) return;
+    if (statusVal === 'เสียชีวิต') {
+      group.classList.remove('d-none');
+    } else {
+      group.classList.add('d-none');
+      clearThaiDate('f_deathDate');
+    }
+  }
+  function checkHNExists(hn) {
+    return new Promise(function (resolve) {
+      const user = getCurrentUser();
+      if (!user) { resolve(false); return; }
+      const target = String(hn || '').trim();
+      if (!target) { resolve(false); return; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.needLogin) { handleNeedLogin(); resolve(false); return; }
+          resolve(!!(res && res.exists));
+        })
+        .withFailureHandler(function () { resolve(false); })
+        .checkHNExists(target, user);
+    });
+  }
+  async function handleHNBlur() {
+    if (state.mode !== 'create') return;
+    const hnInput = el('f_hn');
+    const val = (hnInput.value || '').trim();
+    if (!val) return;
+    try {
+      const exists = await checkHNExists(val);
+      if (exists) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'HN นี้มีอยู่แล้วในระบบ',
+          html: 'HN <strong>' + escapeHtml(val) + '</strong> มีข้อมูลในฐานข้อมูลอยู่แล้ว<br>กรุณาตรวจสอบหรือใช้ HN อื่น',
+          confirmButtonColor: '#2859a8',
+          confirmButtonText: 'ตกลง'
+        }).then(function () {
+          hnInput.focus();
+          hnInput.select();
+        });
+      }
+    } catch (e) {}
+  }
+
+  function openCreateModal() {
+    state.mode = 'create';
+    state.editingHn = null;
+    resetPersonForm();
+    el('personModalTitle').querySelector('span').textContent = 'เพิ่มข้อมูลบุคคลใหม่';
+    el('btnSubmitPerson').querySelector('span').textContent = 'บันทึกการเพิ่ม';
+    if (state.lastSearchHN) el('f_hn').value = state.lastSearchHN;
+    toggleDeathDateVisibility();
+    state.personModal.show();
+  }
+
+  function openEditModal(record) {
+    state.mode = 'edit';
+    state.editingHn = String(record.hn || '');
+    resetPersonForm();
+    el('personModalTitle').querySelector('span').textContent = 'แก้ไขข้อมูลบุคคล';
+    el('btnSubmitPerson').querySelector('span').textContent = 'บันทึกการแก้ไข';
+    el('f_hn').value = record.hn || '';
+    el('f_cid13').value = record.cid13 || '';
+    el('f_prefix').value = record.prefix || '';
+    el('f_firstName').value = record.firstName || '';
+    el('f_lastName').value = record.lastName || '';
+
+    setThaiDateValue('f_birthDate', record.birthDate);
+    el('f_houseNo').value = record.houseNo || '';
+    el('f_moo').value = record.moo || '';
+    el('f_village33').value = record.village33 || '';
+    el('f_villageOutside').value = record.villageOutside || '';
+    el('f_tambon').value = record.tambon || '';
+    el('f_amphoe').value = record.amphoe || '';
+    el('f_province').value = record.province || '';
+    el('f_phone').value = record.phone || '';
+
+    el('f_serviceCode').value = record.serviceCode || '';
+    el('f_serviceCodeDisplay').value = record.serviceCode || '';
+    el('f_serviceName').value = record.serviceName || '';
+    const sel = el('f_serviceSelect');
+    let matched = false;
+    for (let i = 0; i < sel.options.length; i++) {
+      const ov = sel.options[i].value;
+      if (!ov) continue;
+      try {
+        const h = JSON.parse(ov);
+        if (h.code === (record.serviceCode || '')) {
+          sel.selectedIndex = i;
+          matched = true;
+          break;
+        }
+      } catch (e) {}
+    }
+    if (!matched) sel.selectedIndex = 0;
+
+    el('f_treatmentRight').value = record.treatmentRight || '';
+
+    setThaiDateValue('f_htDate', record.ht);
+    setThaiDateValue('f_dmDate', record.dm);
+    setThaiDateValue('f_dlpDate', record.dlp);
+    el('f_status').value = record.status || '';
+    setThaiDateValue('f_deathDate', record.deathDate);
+    el('f_note').value = record.note || '';
+
+    toggleDeathDateVisibility();
+    state.personModal.show();
+    setTimeout(function () {
+      const body = state.modalEl.querySelector('.modal-body');
+      if (body) body.scrollTop = 0;
+    }, 200);
+  }
+  function resetPersonForm() {
+    const form = el('personForm');
+    form.reset();
+    form.classList.remove('was-validated');
+    el('f_serviceCode').value = '';
+    el('f_serviceCodeDisplay').value = '';
+    el('f_serviceName').value = '';
+    el('f_serviceSelect').selectedIndex = 0;
+    clearThaiDate('f_birthDate');
+    clearThaiDate('f_htDate');
+    clearThaiDate('f_dmDate');
+    clearThaiDate('f_dlpDate');
+    clearThaiDate('f_deathDate');
+  }
+  function onServiceSelectChange() {
+    const sel = el('f_serviceSelect');
+    const val = sel.value;
+    if (!val) {
+      el('f_serviceCode').value = '';
+      el('f_serviceCodeDisplay').value = '';
+      el('f_serviceName').value = '';
+      return;
+    }
+    try {
+      const h = JSON.parse(val);
+      el('f_serviceCode').value = h.code || '';
+      el('f_serviceCodeDisplay').value = h.code || '';
+      el('f_serviceName').value = h.name || '';
+    } catch (e) {}
+  }
+
+  function collectPersonData() {
+    const data = {};
+    data.hn = (el('f_hn').value || '').trim();
+    data.cid13 = (el('f_cid13').value || '').trim();
+    data.prefix = (el('f_prefix').value || '').trim();
+    data.firstName = (el('f_firstName').value || '').trim();
+    data.lastName = (el('f_lastName').value || '').trim();
+    data.birthDate = getThaiDateValueAsCEISO('f_birthDate');
+    data.houseNo = (el('f_houseNo').value || '').trim();
+    data.moo = (el('f_moo').value || '').trim();
+    data.village33 = (el('f_village33').value || '').trim();
+    data.villageOutside = (el('f_villageOutside').value || '').trim();
+    data.tambon = (el('f_tambon').value || '').trim();
+    data.amphoe = (el('f_amphoe').value || '').trim();
+    data.province = (el('f_province').value || '').trim();
+    data.phone = (el('f_phone').value || '').trim();
+    data.serviceCode = (el('f_serviceCode').value || '').trim();
+    data.serviceName = (el('f_serviceName').value || '').trim();
+    data.treatmentRight = (el('f_treatmentRight').value || '').trim();
+    data.ht = getThaiDateValueAsCEISO('f_htDate');
+    data.dm = getThaiDateValueAsCEISO('f_dmDate');
+    data.dlp = getThaiDateValueAsCEISO('f_dlpDate');
+    data.status = (el('f_status').value || '').trim();
+    data.deathDate = getThaiDateValueAsCEISO('f_deathDate');
+    data.note = (el('f_note').value || '').trim();
+    return data;
+  }
+  function scrollToFirstInvalid() {
+    const body = state.modalEl.querySelector('.modal-body');
+    const invalid = state.modalEl.querySelector('.was-validated .form-control:invalid, .was-validated .form-select:invalid');
+    if (invalid && body) {
+      const target = invalid.closest('.col-md-2, .col-md-3, .col-md-4, .col-md-5, .col-md-6, .col-md-7, .col-md-8, .col-md-12, .row') || invalid;
+      body.scrollTo({ top: target.offsetTop - 20, behavior: 'smooth' });
+      setTimeout(() => invalid.focus(), 350);
+    }
+  }
+  function upsertPatientListRecord_(record, oldHn) {
+    if (!record || !state.patientListLoaded) return;
+    const list = Array.isArray(state.patientAllData) ? state.patientAllData.slice() : [];
+    const oldKey = String(oldHn || record.hn || '').trim();
+    let found = false;
+    for (let i=0;i<list.length;i++) {
+      if (String(list[i].hn || '').trim() === oldKey) {
+        list[i] = Object.assign({}, list[i], record);
+        found = true; break;
+      }
+    }
+    if (!found) list.unshift(record);
+    if (oldKey && String(record.hn || '').trim() !== oldKey) {
+      for (let i=list.length-1;i>=0;i--) if (String(list[i].hn || '').trim() === oldKey && String(list[i].hn || '').trim() !== String(record.hn || '').trim()) list.splice(i,1);
+    }
+    state.patientAllData = list;
+    state.patientPage = 1;
+    if (state.patientListVisible) { renderPatientTablePage_(); renderPatientPagination_(); }
+  }
+
+  function handlePersonSubmit(e) {
+    e.preventDefault();
+    const user = getCurrentUser();
+    if (!user) { handleNeedLogin(); return; }
+    const form = el('personForm');
+    if (!form.checkValidity()) {
+      form.classList.add('was-validated');
+      toast('กรุณากรอกข้อมูลให้ครบทุกช่องที่มีเครื่องหมาย *', 'warning', 2600);
+      scrollToFirstInvalid();
+      return;
+    }
+    form.classList.remove('was-validated');
+    const data = collectPersonData();
+    const btn = el('btnSubmitPerson');
+    const actionLabel = (state.mode === 'edit') ? 'แก้ไขข้อมูล' : 'เพิ่มข้อมูล';
+    Swal.fire({
+      title: 'กำลังบันทึกข้อมูล...',
+      text: 'กรุณารอสักครู่ ระบบกำลังบันทึกข้อมูล',
+      didOpen: function () { Swal.showLoading(); },
+      allowOutsideClick: false,
+      showConfirmButton: false
+    });
+    setBtnLoading(btn, 'กำลังบันทึก...');
+    const onDone = function (res) {
+      resetBtn(btn);
+      Swal.close();
+      if (res && res.needLogin) { handleNeedLogin(); return; }
+      if (res && res.success) {
+        state.personModal.hide();
+        const targetHN = (res.hn || data.hn || state.editingHn || '');
+        state.lastSearchHN = targetHN;
+        el('searchHN').value = targetHN || '';
+        el('searchForm').classList.remove('was-validated');
+        if (res && res.data && res.data.length) {
+          renderResults(res.data);
+        } else {
+          renderNoResults();
+        }
+        if (res && res.data && res.data.length) { upsertPatientListRecord_(res.data[0], state.mode === 'edit' ? state.editingHn : null); }
+        Swal.fire({
+          icon: 'success',
+          title: actionLabel + 'สำเร็จ',
+          text: res.message || '',
+          timer: 1400,
+          showConfirmButton: false,
+          timerProgressBar: true
+        });
+      } else {
+        showError((res && res.message) || 'บันทึกไม่สำเร็จ');
+      }
+    };
+    const onFail = function (err) {
+      resetBtn(btn);
+      Swal.close();
+      showError(err.message || 'Network error');
+    };
+    if (state.mode === 'edit') {
+      google.script.run
+        .withSuccessHandler(onDone)
+        .withFailureHandler(onFail)
+        .updatePerson(state.editingHn, data, user);
+    } else {
+      google.script.run
+        .withSuccessHandler(onDone)
+        .withFailureHandler(onFail)
+        .createPerson(data, user);
+    }
+  }
+
+  function handleLogin(e) {
+    if (e) e.preventDefault();
+    const form = el('loginForm');
+    if (!form.checkValidity()) {
+      form.classList.add('was-validated');
+      return;
+    }
+    form.classList.remove('was-validated');
+    const u = (el('loginUsername').value || '').trim();
+    const p = el('loginPassword').value;
+    const btn = el('btnLogin');
+    setBtnLoading(btn, 'กำลังตรวจสอบ...');
+    google.script.run
+      .withSuccessHandler(function (res) {
+        resetBtn(btn);
+        if (res && res.success && res.user) {
+          const userObj = normalizeUser_(res.user);
+          saveUserSession(userObj);
+          state.currentUser = userObj;
+          // ล้างค่า username / password ทันที
+          form.reset();
+          form.classList.remove('was-validated');
+          // แสดงผล
+          // toast('เข้าสู่ระบบสำเร็จ ยินดีต้อนรับ คุณ' + userObj.name, 'success', 1800);
+          showApp();
+        } else {
+          showError((res && res.message) || 'เข้าสู่ระบบไม่สำเร็จ');
+        }
+      })
+      .withFailureHandler(function (err) {
+        resetBtn(btn);
+        showError(err.message || 'Network error');
+      })
+      .login(u, p);
+  }
+  
+  // function handleLogout() {
+  //   const user = getCurrentUser();
+  //   confirmDialog(
+  //     'ออกจากระบบ',
+  //     'คุณแน่ใจหรือไม่ที่จะออกจากระบบ?',
+  //     'ออกจากระบบ',
+  //     false
+  //   ).then(function (r) {
+  //     if (!r.isConfirmed) return;
+  //     if (!user) {
+  //       showLoginView();
+  //       return;
+  //     }
+  //     google.script.run
+  //       .withSuccessHandler(function (res) {
+  //         showLoginView();
+  //         toast(
+  //           'ออกจากระบบสำเร็จ',
+  //           'success',
+  //           1500
+  //         );
+  //       })
+  //       .withFailureHandler(function (err) {
+  //         showLoginView();
+  //         toast(
+  //           'ออกจากระบบสำเร็จ',
+  //           'success',
+  //           1500
+  //         );
+  //       })
+  //       .logout(user);
+  //   });
+  // }
+
+  function handleLogout() {
+    const user = getCurrentUser();
+    confirmDialog(
+      'ออกจากระบบ',
+      'คุณแน่ใจหรือไม่ที่จะออกจากระบบ?',
+      'ออกจากระบบ',
+      false
+    ).then(function (r) {
+
+      if (!r.isConfirmed) return;
+      if (!user) {
+        showLoginView();
+        return;
+      }
+      Swal.fire({
+        title: 'กำลังออกจากระบบ...',
+        text: 'กรุณารอสักครู่',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        didOpen: function () {
+          Swal.showLoading();
+        }
+      });
+      google.script.run
+        .withSuccessHandler(function () {
+          Swal.close();
+          showLoginView();
+        })
+        .withFailureHandler(function () {
+          Swal.close();
+          showLoginView();
+        })
+        .logout(user);
+    });
+  }
+
+  function toggleLoginPassword() {
+    const input = el('loginPassword');
+    const ico = document.querySelector('#toggleLoginPassword i');
+    if (!input || !ico) return;
+    if (input.type === 'password') {
+      input.type = 'text';
+      ico.classList.remove('fa-eye');
+      ico.classList.add('fa-eye-slash');
+    } else {
+      input.type = 'password';
+      ico.classList.remove('fa-eye-slash');
+      ico.classList.add('fa-eye');
+    }
+  }
+
+  function initThaiAddressAutocomplete() {
+    if (typeof jQuery === 'undefined') return;
+    const $d = jQuery('#f_tambon');
+    const $a = jQuery('#f_amphoe');
+    const $p = jQuery('#f_province');
+    if (!$d.length || !$a.length || !$p.length) return;
+    if (typeof jQuery.Thailand !== 'function') return;
+    if ($d.data('thailand-bound') === '1') return;
+    $d.data('thailand-bound', '1');
+    jQuery.Thailand({
+      $district: $d,
+      $amphoe: $a,
+      $province: $p,
+      autocomplete_size: 20
+    });
+  }
+
+  function updateSidebarToggleIcon_() {
+    const btn = el('btnSidebarToggle');
+    if (!btn) return;
+    const icon = btn.querySelector('i');
+    const open = document.body.classList.contains('sidebar-open');
+    btn.title = open ? 'ซ่อนเมนู' : 'แสดงเมนู';
+    if (icon) icon.className = open ? 'fa-solid fa-xmark' : 'fa-solid fa-bars';
+  }
+
+  // ------------------------------------------------------------
+  // Public Core API for independent modules (fundus, foot, etc.)
+  // ------------------------------------------------------------
+  NCDApp.state = state;
+  NCDApp.core = Object.assign(NCDApp.core || {}, {
+    getCurrentUser: getCurrentUser,
+    handleNeedLogin: handleNeedLogin,
+    setBtnLoading: setBtnLoading,
+    resetBtn: resetBtn,
+    escapeHtml: escapeHtml,
+    formatHN: formatHN,
+    formatCID: formatCID,
+    toast: toast,
+    showError: showError,
+    confirmDialog: confirmDialog,
+    isEmptyValue: isEmptyValue,
+    formatThaiDateBE: formatThaiDateBE,
+    clearThaiDate: clearThaiDate,
+    showInitialLoader: showInitialLoader,
+    hideInitialLoader: hideInitialLoader,
+    showSearchLoader: showSearchLoader,
+    hideSearchLoader: hideSearchLoader,
+    initThaiFlatpickrs: initThaiFlatpickrs,
+    switchView: switchView_,
+    showApp: showApp,
+    showLoginView: showLoginView,
+    getFirstAllowedView: getFirstAllowedView_,
+    canAccessView: canAccessView_
+  });
+
+  function openChangePasswordModal() {
+    const user = getCurrentUser();
+    if (!user) {
+      handleNeedLogin();
+      return;
+    }
+    
+    // Populate username
+    el('cp_username').value = user.username || '';
+    
+    // Clear password fields
+    el('cp_oldPassword').value = '';
+    el('cp_newPassword').value = '';
+    el('cp_confirmPassword').value = '';
+    
+    // Reset password fields to hidden
+    ['cp_oldPassword', 'cp_newPassword', 'cp_confirmPassword'].forEach(function(id) {
+      const input = el(id);
+      if (input) {
+        input.type = 'password';
+      }
+    });
+    
+    // Reset toggle text to "แสดง"
+    ['toggleOldPassword', 'toggleNewPassword', 'toggleConfirmPassword'].forEach(function(id) {
+      const btn = el(id);
+      if (btn) {
+        const text = btn.querySelector('.password-toggle-text');
+        if (text) {
+          text.textContent = 'แสดง';
+        }
+      }
+    });
+    
+    // Reset form validation
+    const form = el('changePasswordForm');
+    if (form) form.classList.remove('was-validated');
+    
+    // Show modal
+    const modalEl = el('changePasswordModal');
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+  }
+
+  function togglePasswordVisibility(inputId, button) {
+    const input = el(inputId);
+    if (!input) return;
+    
+    const text = button.querySelector('.password-toggle-text');
+    if (!text) return;
+    
+    if (input.type === 'password') {
+      input.type = 'text';
+      text.textContent = 'ซ่อน';
+    } else {
+      input.type = 'password';
+      text.textContent = 'แสดง';
+    }
+  }
+
+  function handleChangePassword(e) {
+    if (e) e.preventDefault();
+    
+    const user = getCurrentUser();
+    if (!user) {
+      handleNeedLogin();
+      return;
+    }
+    
+    const form = el('changePasswordForm');
+    if (form && !form.checkValidity()) {
+      form.classList.add('was-validated');
+      return;
+    }
+    if (form) form.classList.remove('was-validated');
+    
+    const oldPassword = el('cp_oldPassword') ? String(el('cp_oldPassword').value || '').trim() : '';
+    const newPassword = el('cp_newPassword') ? String(el('cp_newPassword').value || '').trim() : '';
+    const confirmPassword = el('cp_confirmPassword') ? String(el('cp_confirmPassword').value || '').trim() : '';
+    
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      toast('กรุณากรอกข้อมูลให้ครบ', 'warning', 2000);
+      return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+      toast('รหัสผ่านใหม่ไม่ตรงกัน', 'error', 2000);
+      return;
+    }
+    
+    if (newPassword.length < 4) {
+      toast('รหัสผ่านใหม่ต้องมีอย่างน้อย 4 ตัวอักษร', 'error', 2000);
+      return;
+    }
+    
+    const btn = el('btnChangePassword');
+    setBtnLoading(btn, 'กำลังบันทึก...');
+    
+    google.script.run
+      .withSuccessHandler(function (res) {
+        resetBtn(btn);
+        if (!res) return;
+        if (res.needLogin) {
+          handleNeedLogin();
+          return;
+        }
+        if (!res.success) {
+          if (res.message) toast(res.message, 'error', 2500);
+          return;
+        }
+        
+        // Close modal
+        const modalEl = el('changePasswordModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+        
+        // Show success modal
+        Swal.fire({
+          icon: 'success',
+          title: 'เปลี่ยนรหัสผ่านสำเร็จ',
+          text: 'รหัสผ่านของคุณถูกเปลี่ยนเรียบร้อยแล้ว',
+          confirmButtonColor: '#2859a8',
+          confirmButtonText: 'ตกลง'
+        });
+        
+        // Clear form
+        el('cp_oldPassword').value = '';
+        el('cp_newPassword').value = '';
+        el('cp_confirmPassword').value = '';
+      })
+      .withFailureHandler(function () {
+        resetBtn(btn);
+        toast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่', 'error', 2000);
+      })
+      .changePassword(user.username, oldPassword, newPassword, user);
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    showInitialLoader();
+    state.modalEl = el('personModal');
+    state.personModal = new bootstrap.Modal(state.modalEl, { keyboard: false });
+    if (el('patientDetailModal')) state.patientDetailModal = new bootstrap.Modal(el('patientDetailModal'), { keyboard: true });
+    state.modalEl.addEventListener('shown.bs.modal', function () {
+      const body = state.modalEl.querySelector('.modal-body');
+      if (body) {
+        body.style.overflowY = 'auto';
+        body.style.height = 'calc(100vh - 160px)';
+      }
+      if (Object.keys(state.datepickers || {}).length === 0) initThaiFlatpickrs();
+      initThaiAddressAutocomplete();
+    });
+    el('f_serviceSelect').addEventListener('change', onServiceSelectChange);
+    el('f_status').addEventListener('change', toggleDeathDateVisibility);
+    el('f_hn').addEventListener('blur', handleHNBlur);
+    el('searchForm').addEventListener('submit', handleSearch);
+    el('searchHN').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') el('btnSearch').click();
+    });
+    el('personForm').addEventListener('submit', handlePersonSubmit);
+    el('loginForm').addEventListener('submit', handleLogin);
+    el('btnClear').addEventListener('click', function () {
+      el('searchHN').value = '';
+      el('searchForm').classList.remove('was-validated');
+      clearResults();
+      setTimeout(() => el('searchHN').focus(), 50);
+    });
+    if (el('btnLogout')) el('btnLogout').addEventListener('click', handleLogout);
+    if (el('navbarUser')) el('navbarUser').addEventListener('click', openChangePasswordModal);
+    if (el('changePasswordForm')) el('changePasswordForm').addEventListener('submit', handleChangePassword);
+    if (el('toggleOldPassword')) el('toggleOldPassword').addEventListener('click', function() {
+      togglePasswordVisibility('cp_oldPassword', this);
+    });
+    if (el('toggleNewPassword')) el('toggleNewPassword').addEventListener('click', function() {
+      togglePasswordVisibility('cp_newPassword', this);
+    });
+    if (el('toggleConfirmPassword')) el('toggleConfirmPassword').addEventListener('click', function() {
+      togglePasswordVisibility('cp_confirmPassword', this);
+    });
+    if (el('btnShowAllPatients')) el('btnShowAllPatients').addEventListener('click', showPatientList_);
+    if (el('btnRefreshPatientList')) el('btnRefreshPatientList').addEventListener('click', function(){ const btn=el('btnRefreshPatientList'); setBtnLoading(btn,'กำลังโหลด...'); fetchPatientList().finally(function(){ resetBtn(btn); }); });
+    if (el('btnPatientSearch')) el('btnPatientSearch').addEventListener('click', function(){ state.patientSearch=(el('patientListSearch').value||'').trim(); state.patientPage=1; renderPatientTablePage_(); renderPatientPagination_(); });
+    if (el('patientListSearch')) el('patientListSearch').addEventListener('keydown', function(e){ if(e.key==='Enter'){e.preventDefault(); state.patientSearch=this.value.trim(); state.patientPage=1; renderPatientTablePage_(); renderPatientPagination_();} });
+    if (el('btnClearPatientFilters')) el('btnClearPatientFilters').addEventListener('click', function(){ state.patientSearch=''; state.patientDiseaseFilters=[]; state.patientStatusFilter=''; if(el('patientListSearch')) el('patientListSearch').value=''; if(el('patientStatusFilter')) el('patientStatusFilter').value=''; document.querySelectorAll('.disease-filter').forEach(function(b){b.classList.remove('active');}); state.patientPage=1; renderPatientTablePage_(); renderPatientPagination_(); });
+    if (el('patientStatusFilter')) el('patientStatusFilter').addEventListener('change', function(){ state.patientStatusFilter=this.value; state.patientPage=1; renderPatientTablePage_(); renderPatientPagination_(); });
+    document.querySelectorAll('.disease-filter').forEach(function(btn){ btn.addEventListener('click', function(){ const d=this.getAttribute('data-disease'); const i=state.patientDiseaseFilters.indexOf(d); if(i>=0){state.patientDiseaseFilters.splice(i,1);this.classList.remove('active');} else {state.patientDiseaseFilters.push(d);this.classList.add('active');} state.patientPage=1; renderPatientTablePage_(); renderPatientPagination_(); }); });
+    if (el('btnPatientAdd')) el('btnPatientAdd').addEventListener('click', openCreateModal);
+    if (el('btnExportExcel')) el('btnExportExcel').addEventListener('click', exportPatientExcel_);
+    document.querySelectorAll('.sidebar-menu[data-view]').forEach(function(btn){ btn.addEventListener('click', function(){ switchView_(this.getAttribute('data-view')); if(window.innerWidth<992) { document.body.classList.remove('sidebar-open'); updateSidebarToggleIcon_(); } }); });
+    if (el('btnSidebarToggle')) el('btnSidebarToggle').addEventListener('click', function(){ document.body.classList.toggle('sidebar-open'); updateSidebarToggleIcon_(); });
+    if (el('btnSidebarClose')) el('btnSidebarClose').addEventListener('click', function(){ document.body.classList.remove('sidebar-open'); updateSidebarToggleIcon_(); });
+    if (el('sidebarOverlay')) el('sidebarOverlay').addEventListener('click', function(){ document.body.classList.remove('sidebar-open'); updateSidebarToggleIcon_(); });
+
+    NCDApp.call('fundus', 'initEvents');
+    NCDApp.call('telemed', 'initEvents');
+    const savedUser = loadUserFromStorage();
+    if (savedUser) {
+      state.currentUser = savedUser;
+      renderUserDisplay_(savedUser);
+      showApp();
+    } else {
+      showLoginView();
+    }
+  });
+})();
+</script>

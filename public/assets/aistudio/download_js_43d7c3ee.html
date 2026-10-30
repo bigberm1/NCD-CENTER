@@ -1,0 +1,628 @@
+<script>
+  (function (NCDApp) {
+  'use strict';
+
+  // Download module — จัดการไฟล์ดาวน์โหลด
+  // แสดงชนิดไฟล์พร้อมไอคอน, แสดงรูปตัวอย่างสำหรับไฟล์รูปภาพ
+  // และเปิดไฟล์ผ่านลิงก์ Google Drive (https://lh3.googleusercontent.com/d/<id>)
+
+  const el = NCDApp.el || function (id) { return document.getElementById(id); };
+
+  let downloadTable = null;
+  let downloadData = [];
+  let editingFile = null;      // แถวข้อมูลไฟล์ที่กำลังแก้ไข (null = เพิ่มใหม่)
+  let requireNewFile = true;   // ต้องเลือกไฟล์ใหม่หรือไม่
+
+  // ไอคอน/สี ตามชนิดไฟล์
+  const EXT_META = {
+    pdf:  { icon: 'fa-file-pdf',        color: '#dc2626', label: 'PDF' },
+    doc:  { icon: 'fa-file-word',       color: '#2563eb', label: 'DOC' },
+    docx: { icon: 'fa-file-word',       color: '#2563eb', label: 'DOCX' },
+    xls:  { icon: 'fa-file-excel',      color: '#16a34a', label: 'XLS' },
+    xlsx: { icon: 'fa-file-excel',      color: '#16a34a', label: 'XLSX' },
+    csv:  { icon: 'fa-file-csv',        color: '#16a34a', label: 'CSV' },
+    ppt:  { icon: 'fa-file-powerpoint', color: '#ea580c', label: 'PPT' },
+    pptx: { icon: 'fa-file-powerpoint', color: '#ea580c', label: 'PPTX' },
+    txt:  { icon: 'fa-file-lines',      color: '#64748b', label: 'TXT' },
+    rtf:  { icon: 'fa-file-lines',      color: '#64748b', label: 'RTF' },
+    zip:  { icon: 'fa-file-zipper',     color: '#d97706', label: 'ZIP' },
+    rar:  { icon: 'fa-file-zipper',     color: '#d97706', label: 'RAR' },
+    '7z': { icon: 'fa-file-zipper',     color: '#d97706', label: '7Z' },
+    html: { icon: 'fa-file-code',       color: '#0d9488', label: 'HTML' },
+    htm:  { icon: 'fa-file-code',       color: '#0d9488', label: 'HTM' },
+    css:  { icon: 'fa-file-code',       color: '#0d9488', label: 'CSS' },
+    js:   { icon: 'fa-file-code',       color: '#0d9488', label: 'JS' },
+    json: { icon: 'fa-file-code',       color: '#0d9488', label: 'JSON' },
+    mp3:  { icon: 'fa-file-audio',      color: '#7c3aed', label: 'MP3' },
+    wav:  { icon: 'fa-file-audio',      color: '#7c3aed', label: 'WAV' },
+    mp4:  { icon: 'fa-file-video',      color: '#7c3aed', label: 'MP4' },
+    mov:  { icon: 'fa-file-video',      color: '#7c3aed', label: 'MOV' },
+    png:  { icon: 'fa-file-image',      color: '#9333ea', label: 'PNG',  image: true },
+    jpg:  { icon: 'fa-file-image',      color: '#9333ea', label: 'JPG',  image: true },
+    jpeg: { icon: 'fa-file-image',      color: '#9333ea', label: 'JPEG', image: true },
+    gif:  { icon: 'fa-file-image',      color: '#9333ea', label: 'GIF',  image: true },
+    bmp:  { icon: 'fa-file-image',      color: '#9333ea', label: 'BMP',  image: true },
+    webp: { icon: 'fa-file-image',      color: '#9333ea', label: 'WEBP', image: true },
+    svg:  { icon: 'fa-file-image',      color: '#9333ea', label: 'SVG',  image: true }
+  };
+  const DEFAULT_META = { icon: 'fa-file', color: '#6b7280', label: 'FILE' };
+
+  // แปลง MIME type → นามสกุล (ใช้เมื่อชื่อไฟล์ไม่มีนามสกุล)
+  const MIME_EXT = {
+    'application/pdf': 'pdf',
+    'application/msword': 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    'application/vnd.ms-excel': 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    'text/csv': 'csv',
+    'application/vnd.ms-powerpoint': 'ppt',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    'text/plain': 'txt',
+    'application/rtf': 'rtf',
+    'application/zip': 'zip',
+    'application/x-rar-compressed': 'rar',
+    'application/x-7z-compressed': '7z',
+    'text/html': 'html',
+    'text/css': 'css',
+    'text/javascript': 'js',
+    'application/json': 'json',
+    'audio/mpeg': 'mp3',
+    'audio/wav': 'wav',
+    'video/mp4': 'mp4',
+    'video/quicktime': 'mov',
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/gif': 'gif',
+    'image/bmp': 'bmp',
+    'image/webp': 'webp',
+    'image/svg+xml': 'svg'
+  };
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = (text === null || text === undefined) ? '' : String(text);
+    return div.innerHTML;
+  }
+
+  function isAdminUser() {
+    const user = NCDApp.state && NCDApp.state.currentUser;
+    return !!(user && String(user.role || '').toLowerCase() === 'admin');
+  }
+
+  function showLoader() {
+    if (NCDApp.core && NCDApp.core.showSearchLoader) NCDApp.core.showSearchLoader();
+  }
+
+  function hideLoader() {
+    if (NCDApp.core && NCDApp.core.hideSearchLoader) NCDApp.core.hideSearchLoader();
+  }
+
+  function showError(msg) {
+    if (NCDApp.core && NCDApp.core.showError) {
+      NCDApp.core.showError(msg);
+      return;
+    }
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: msg || 'กรุณาลองใหม่อีกครั้ง', confirmButtonText: 'ตกลง' });
+    }
+  }
+
+  function toast(title) {
+    if (NCDApp.core && NCDApp.core.toast) {
+      NCDApp.core.toast(title, 'success');
+      return;
+    }
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({ icon: 'success', title: title || 'สำเร็จ', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000, timerProgressBar: true });
+    }
+  }
+
+  function formatFileSize(bytes) {
+    const n = Number(bytes);
+    if (!n) return '-';
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(n) / Math.log(1024));
+    return Math.round(n / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+  }
+
+  function getFileExt(name) {
+    const s = String(name || '');
+    const i = s.lastIndexOf('.');
+    return i > -1 ? s.slice(i + 1).toLowerCase() : '';
+  }
+
+  function extFromMime(mimeType) {
+    const mime = String(mimeType || '').toLowerCase().trim();
+    if (!mime) return '';
+    if (MIME_EXT[mime]) return MIME_EXT[mime];
+    const sub = mime.split('/')[1] || '';
+    return sub ? sub.replace(/^x-/, '').replace(/\+.*$/, '') : '';
+  }
+
+  function getFileMeta(fileName, mimeType) {
+    let ext = getFileExt(fileName);
+    // ถ้านามสกุลไม่รู้จัก ให้ดูจาก MIME type ที่เก็บในชีต
+    if (!EXT_META[ext]) {
+      const fromMime = extFromMime(mimeType);
+      if (fromMime && EXT_META[fromMime]) ext = fromMime;
+    }
+    const meta = EXT_META[ext] || DEFAULT_META;
+    return {
+      icon: meta.icon,
+      color: meta.color,
+      label: meta.label,
+      image: !!meta.image,
+      ext: ext ? ext.toUpperCase() : ''
+    };
+  }
+
+  function fileViewUrl(row) {
+    if (row && row.fileUrl) return row.fileUrl;
+    if (row && row.fileId) return 'https://lh3.googleusercontent.com/d/' + row.fileId;
+    return '#';
+  }
+
+  function fileThumbUrl(row) {
+    if (!row || !row.fileId) return '';
+    return 'https://lh3.googleusercontent.com/d/' + row.fileId + '=w200';
+  }
+
+  function typeCellHtml(row) {
+    const meta = getFileMeta(row.fileName, row.fileType);
+    if (meta.image) {
+      const thumb = fileThumbUrl(row);
+      return '<span class="file-type">' +
+        '<img src="' + thumb + '" alt="" class="file-thumb js-img-preview" loading="lazy"' +
+        ' data-url="' + escapeHtml(fileViewUrl(row)) + '" data-name="' + escapeHtml(row.fileName || '') + '">' +
+        '<span class="ft-label" style="color:' + meta.color + '">' + meta.label + '</span>' +
+        '</span>';
+    }
+    return '<span class="file-type">' +
+      '<span class="ft-icon" style="background:' + meta.color + '1a;color:' + meta.color + '">' +
+      '<i class="fa-solid ' + meta.icon + '"></i></span>' +
+      '<span class="ft-label" style="color:' + meta.color + '">' + meta.label + '</span>' +
+      '</span>';
+  }
+
+  function previewImage(url, name) {
+    if (!url) return;
+    if (typeof Swal === 'undefined') {
+      window.open(url, '_blank', 'noopener');
+      return;
+    }
+    Swal.fire({
+      title: name || 'รูปตัวอย่าง',
+      imageUrl: url,
+      imageAlt: name || 'รูปตัวอย่าง',
+      width: 720,
+      showCloseButton: true,
+      confirmButtonText: 'ปิด',
+      confirmButtonColor: '#374151'
+    });
+  }
+
+  function initDownloadPage() {
+    const addBtn = el('btnAddDownloadFile');
+    if (addBtn) addBtn.classList.toggle('d-none', !isAdminUser());
+
+    loadDownloadData();
+    initDownloadFileModal();
+  }
+
+  function loadDownloadData() {
+    const loader = el('downloadLoader');
+    const content = el('downloadContent');
+
+    if (loader) loader.classList.remove('d-none');
+    if (content) content.classList.add('d-none');
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (loader) loader.classList.add('d-none');
+        if (!res || !res.success) {
+          showError((res && res.message) || 'ไม่สามารถโหลดข้อมูลได้');
+          return;
+        }
+        downloadData = res.files || [];
+        if (content) content.classList.remove('d-none');
+        renderDownloadTable();
+      })
+      .withFailureHandler(function () {
+        if (loader) loader.classList.add('d-none');
+        showError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่');
+      })
+      .getDownloadFiles();
+  }
+
+  function buildColumns(isAdmin) {
+    return [
+      {
+        data: null, className: 'text-center', orderable: false,
+        render: function (d, type, row, meta) { return meta.row + 1; }
+      },
+      {
+        data: null,
+        render: function (d, type, row) { return escapeHtml(row.fileName || '-'); }
+      },
+      {
+        data: null, className: 'text-center', orderable: false,
+        render: function (d, type, row) { return typeCellHtml(row); }
+      },
+      {
+        data: null,
+        render: function (d, type, row) { return escapeHtml(formatFileSize(row.fileSize)); }
+      },
+      {
+        data: null,
+        render: function (d, type, row) { return escapeHtml(row.updatedDate || '-'); }
+      },
+      {
+        data: null, className: 'text-center', orderable: false,
+        render: function (d, type, row) {
+          return '<a href="' + escapeHtml(fileViewUrl(row)) + '" target="_blank" rel="noopener" class="btn btn-primary btn-sm">' +
+            '<i class="fa-solid fa-download me-1"></i>ดาวน์โหลด</a>';
+        }
+      },
+      {
+        data: null, className: 'text-center', orderable: false, visible: isAdmin,
+        render: function (d, type, row) {
+          const id = escapeHtml(row.fileId);
+          return '<button type="button" class="btn btn-warning btn-sm btn-edit-download" data-id="' + id + '" title="แก้ไข">' +
+            '<i class="fa-solid fa-pen"></i></button>' +
+            '<button type="button" class="btn btn-danger btn-sm btn-delete-download ms-1" data-id="' + id + '" title="ลบ">' +
+            '<i class="fa-solid fa-trash"></i></button>';
+        }
+      }
+    ];
+  }
+
+  function renderDownloadTable() {
+    const $tbl = $('#downloadTable');
+    const isAdmin = isAdminUser();
+
+    if (downloadTable) {
+      try { downloadTable.destroy(); } catch (e) { /* ignore */ }
+      downloadTable = null;
+    }
+
+    downloadTable = $tbl.DataTable({
+      destroy: true,
+      data: downloadData,
+      columns: buildColumns(isAdmin),
+      order: [],
+      pageLength: 10,
+      lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'ทั้งหมด']],
+      language: {
+        emptyTable: 'ยังไม่มีไฟล์',
+        info: 'แสดง _START_ ถึง _END_ จากทั้งหมด _TOTAL_ รายการ',
+        infoEmpty: 'แสดง 0 ถึง 0 จากทั้งหมด 0 รายการ',
+        infoFiltered: '(กรองจากทั้งหมด _MAX_ รายการ)',
+        lengthMenu: 'แสดง _MENU_ รายการ',
+        loadingRecords: 'กำลังโหลด...',
+        processing: 'กำลังประมวลผล...',
+        search: 'ค้นหา:',
+        zeroRecords: 'ไม่พบรายการที่ตรงกัน',
+        paginate: { first: 'แรก', last: 'สุดท้าย', next: 'ถัดไป', previous: 'ก่อนหน้า' }
+      },
+      autoWidth: false
+    });
+
+    $tbl.off('click', '.btn-edit-download').on('click', '.btn-edit-download', function () {
+      editDownloadFile($(this).attr('data-id'));
+    });
+    $tbl.off('click', '.btn-delete-download').on('click', '.btn-delete-download', function () {
+      deleteDownloadFile($(this).attr('data-id'));
+    });
+    $tbl.off('click', '.js-img-preview').on('click', '.js-img-preview', function () {
+      previewImage($(this).attr('data-url'), $(this).attr('data-name'));
+    });
+  }
+
+  // ---------- Dropzone ----------
+
+  function setFileRequiredMark(on) {
+    document.querySelectorAll('#downloadFileModal .df-req-mark').forEach(function (m) {
+      m.classList.toggle('d-none', !on);
+    });
+  }
+
+  function hideFileError() {
+    const err = el('df_fileError');
+    if (err) err.classList.add('d-none');
+    const dz = el('df_dropzone');
+    if (dz) dz.classList.remove('dz-invalid');
+  }
+
+  function showDropzoneEmpty() {
+    const empty = el('df_dropzoneEmpty');
+    const prev = el('df_filePreview');
+    if (empty) empty.classList.remove('d-none');
+    if (prev) prev.classList.add('d-none');
+    hideFileError();
+  }
+
+  function showDropzoneFile(file) {
+    const meta = getFileMeta(file.name, file.type);
+    const empty = el('df_dropzoneEmpty');
+    const prev = el('df_filePreview');
+    const thumb = el('df_previewThumb');
+    if (empty) empty.classList.add('d-none');
+    if (prev) prev.classList.remove('d-none');
+
+    if (thumb) {
+      if (meta.image && /^image\//.test(file.type || '')) {
+        const reader = new FileReader();
+        reader.onload = function (ev) { thumb.innerHTML = '<img src="' + ev.target.result + '" alt="">'; };
+        reader.readAsDataURL(file);
+      } else {
+        thumb.innerHTML = '<i class="fa-solid ' + meta.icon + '" style="color:' + meta.color + '"></i>';
+      }
+    }
+    el('df_previewName').textContent = file.name;
+    el('df_previewMeta').textContent = meta.label + ' · ' + formatFileSize(file.size);
+  }
+
+  function showDropzoneExisting(row) {
+    const meta = getFileMeta(row.fileName, row.fileType);
+    const empty = el('df_dropzoneEmpty');
+    const prev = el('df_filePreview');
+    const thumb = el('df_previewThumb');
+    if (empty) empty.classList.add('d-none');
+    if (prev) prev.classList.remove('d-none');
+
+    if (thumb) {
+      thumb.innerHTML = meta.image
+        ? '<img src="' + fileThumbUrl(row) + '" alt="">'
+        : '<i class="fa-solid ' + meta.icon + '" style="color:' + meta.color + '"></i>';
+    }
+    el('df_previewName').textContent = row.fileName || '-';
+    el('df_previewMeta').textContent = meta.label + ' · ' + formatFileSize(row.fileSize) + ' · เลือกไฟล์ใหม่เพื่อแทนที่';
+  }
+
+  function clearChosenFile() {
+    const input = el('df_fileUpload');
+    if (input) input.value = '';
+    hideFileError();
+    if (requireNewFile) {
+      showDropzoneEmpty();
+    } else if (editingFile) {
+      showDropzoneExisting(editingFile);
+    } else {
+      showDropzoneEmpty();
+    }
+  }
+
+  function handleChosenFile(file) {
+    if (!file) return;
+    hideFileError();
+    const nameInput = el('df_fileName');
+    if (nameInput && !nameInput.value.trim()) nameInput.value = file.name;
+    showDropzoneFile(file);
+  }
+
+  function bindDropzone() {
+    const dz = el('df_dropzone');
+    const input = el('df_fileUpload');
+    if (!dz || !input || dz.dataset.bound) return;
+    dz.dataset.bound = '1';
+
+    dz.addEventListener('click', function (e) {
+      if (e.target.closest('#df_btnRemoveFile')) return;
+      input.click();
+    });
+
+    input.addEventListener('change', function () {
+      if (input.files && input.files[0]) handleChosenFile(input.files[0]);
+    });
+
+    ['dragenter', 'dragover'].forEach(function (evt) {
+      dz.addEventListener(evt, function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dz.classList.add('dz-active');
+      });
+    });
+
+    dz.addEventListener('dragleave', function (e) {
+      e.preventDefault();
+      if (!dz.contains(e.relatedTarget)) dz.classList.remove('dz-active');
+    });
+
+    dz.addEventListener('drop', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      dz.classList.remove('dz-active');
+      const dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length) {
+        try { input.files = dt.files; } catch (err) { /* ignore */ }
+        handleChosenFile(dt.files[0]);
+      }
+    });
+
+    const removeBtn = el('df_btnRemoveFile');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        clearChosenFile();
+      });
+    }
+  }
+
+  // ---------- Modal ----------
+
+  // ล็อกฟอร์มทั้งโมดัลระหว่างบันทึก (ปุ่ม/ช่องกรอก/ปุ่มปิด/Esc)
+  function setSaving(on) {
+    const modal = el('downloadFileModal');
+    const btn = el('btnSubmitDownloadFile');
+
+    if (modal) {
+      modal.classList.toggle('dl-busy', on);
+
+      const closeBtn = modal.querySelector('.btn-close');
+      if (closeBtn) closeBtn.disabled = on;
+
+      modal.querySelectorAll('.modal-body input, .modal-body button, .modal-footer button').forEach(function (n) {
+        if (n !== btn) n.disabled = on;
+      });
+    }
+
+    if (btn) {
+      if (on) {
+        if (!btn.dataset.html) btn.dataset.html = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>กำลังบันทึก...';
+      } else {
+        btn.disabled = false;
+        if (btn.dataset.html) {
+          btn.innerHTML = btn.dataset.html;
+          delete btn.dataset.html;
+        }
+      }
+    }
+  }
+
+  function initDownloadFileModal() {
+    const modal = el('downloadFileModal');
+    const form = el('downloadFileForm');
+    const addBtn = el('btnAddDownloadFile');
+
+    if (addBtn && !addBtn.dataset.bound) {
+      addBtn.dataset.bound = '1';
+      addBtn.addEventListener('click', function () {
+        form.reset();
+        form.classList.remove('was-validated');
+        el('downloadFileModalTitle').innerHTML = '<i class="fa-solid fa-cloud-arrow-up me-2"></i><span>เพิ่มไฟล์</span>';
+        el('df_fileId').value = '';
+        el('df_fileName').value = '';
+        el('df_fileUpload').value = '';
+        editingFile = null;
+        requireNewFile = true;
+        setFileRequiredMark(true);
+        showDropzoneEmpty();
+        new bootstrap.Modal(modal).show();
+      });
+    }
+
+    if (form && !form.dataset.bound) {
+      form.dataset.bound = '1';
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (!form.checkValidity()) {
+          e.stopPropagation();
+          form.classList.add('was-validated');
+          return;
+        }
+        saveDownloadFile();
+      });
+    }
+
+    bindDropzone();
+  }
+
+  function editDownloadFile(fileId) {
+    const file = downloadData.find(function (f) { return String(f.fileId) === String(fileId); });
+    if (!file) return;
+
+    const modal = el('downloadFileModal');
+    const form = el('downloadFileForm');
+
+    form.reset();
+    form.classList.remove('was-validated');
+
+    el('downloadFileModalTitle').innerHTML = '<i class="fa-solid fa-pen me-2"></i><span>แก้ไขไฟล์</span>';
+    el('df_fileId').value = fileId;
+    el('df_fileName').value = file.fileName || '';
+    el('df_fileUpload').value = '';
+    editingFile = file;
+    requireNewFile = false;
+    setFileRequiredMark(false);
+    showDropzoneExisting(file);
+
+    new bootstrap.Modal(modal).show();
+  }
+
+  function saveDownloadFile() {
+    const fileId = el('df_fileId').value;
+    const fileName = el('df_fileName').value.trim();
+    const fileInput = el('df_fileUpload');
+    const file = fileInput.files[0];
+
+    if (!file && !fileId) {
+      const err = el('df_fileError');
+      if (err) err.classList.remove('d-none');
+      const dz = el('df_dropzone');
+      if (dz) dz.classList.add('dz-invalid');
+      return;
+    }
+    hideFileError();
+
+    function submit(base64Data, originalFileName, mimeType) {
+      setSaving(true);
+      google.script.run
+        .withSuccessHandler(function (res) {
+          setSaving(false);
+          if (!res || !res.success) {
+            showError((res && res.message) || 'ไม่สามารถบันทึกไฟล์ได้');
+            return;
+          }
+          const bsModal = bootstrap.Modal.getInstance(el('downloadFileModal'));
+          if (bsModal) bsModal.hide();
+          toast('บันทึกไฟล์เรียบร้อย');
+          loadDownloadData();
+        })
+        .withFailureHandler(function () {
+          setSaving(false);
+          showError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่');
+        })
+        .saveDownloadFile(fileId, fileName, base64Data, originalFileName, mimeType);
+    }
+
+    if (!file) {
+      // แก้ไขโดยไม่เปลี่ยนไฟล์ (เปลี่ยนชื่อเท่านั้น)
+      submit('', '', '');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      submit(e.target.result.split(',')[1], file.name, file.type || '');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function deleteDownloadFile(fileId) {
+    const doDelete = function () {
+      showLoader();
+      google.script.run
+        .withSuccessHandler(function (res) {
+          hideLoader();
+          if (!res || !res.success) {
+            showError((res && res.message) || 'ไม่สามารถลบไฟล์ได้');
+            return;
+          }
+          toast('ลบไฟล์เรียบร้อย');
+          loadDownloadData();
+        })
+        .withFailureHandler(function () {
+          hideLoader();
+          showError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่');
+        })
+        .deleteDownloadFile(fileId);
+    };
+
+    if (NCDApp.core && NCDApp.core.confirmDialog) {
+      NCDApp.core.confirmDialog('ยืนยันการลบ', 'ต้องการลบไฟล์นี้ใช่หรือไม่?', 'ลบ', true)
+        .then(function (result) {
+          if (result && result.isConfirmed) doDelete();
+        });
+      return;
+    }
+    if (confirm('ต้องการลบไฟล์นี้ใช่หรือไม่?')) doDelete();
+  }
+
+  NCDApp.registerModule('download', {
+    initPage: initDownloadPage
+  });
+
+  })(window.NCDApp);
+</script>

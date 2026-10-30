@@ -1,0 +1,1539 @@
+<script>
+
+  (function (NCDApp) {
+  'use strict';
+
+  // Shared Core services/state supplied by app.html + js.html.
+  const state = NCDApp.state;
+  const el = NCDApp.el;
+  const core = NCDApp.core || {};
+  const getCurrentUser = core.getCurrentUser;
+  const handleNeedLogin = core.handleNeedLogin;
+  const setBtnLoading = core.setBtnLoading;
+  const resetBtn = core.resetBtn;
+  const escapeHtml = core.escapeHtml;
+  const formatHN = core.formatHN;
+  const formatCID = core.formatCID;
+  const toast = core.toast;
+  const showError = core.showError;
+  const confirmDialog = core.confirmDialog;
+
+  /* ---------- Fundus (ตรวจตา) ---------- */
+
+  function getFundusHospitalFromSelect_(selectedValue) {
+    const v = String(selectedValue || '').trim();
+    if (!v) return { code: '', name: '' };
+    try {
+      const obj = JSON.parse(v);
+      if (obj && typeof obj === 'object') {
+        return { code: String(obj.code || ''), name: String(obj.name || '') };
+      }
+    } catch (e) {}
+    return { code: v, name: v };
+  }
+
+  function fetchFundusDates() {
+    return new Promise(function (resolve) {
+      const user = getCurrentUser();
+      if (!user) { resolve(); return; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res) { resolve(); return; }
+          if (res.needLogin) { handleNeedLogin(); resolve(); return; }
+          if (!res.success) { if (res.message) toast(res.message, 'error', 2000); resolve(); return; }
+          state.fundusDates = Array.isArray(res.dates) ? res.dates : [];
+          renderFundusDateList();
+          resolve();
+        })
+        .withFailureHandler(function () { resolve(); })
+        .getFundusDates(user);
+    });
+  }
+
+  function renderFundusDateList() {
+    const countEl = el('fundusDateCount');
+    if (countEl) countEl.textContent = String(state.fundusDates.length);
+    const emptyEl = el('fundusDateListEmpty');
+    const listEl = el('fundusDateList');
+    if (!listEl) return;
+    const dates = state.fundusDates || [];
+    if (!dates.length) {
+      if (emptyEl) emptyEl.classList.remove('d-none');
+      listEl.classList.add('d-none');
+      listEl.innerHTML = '';
+      return;
+    }
+    if (emptyEl) emptyEl.classList.add('d-none');
+    listEl.classList.remove('d-none');
+    listEl.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < dates.length; i++) {
+      const d = dates[i];
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'list-group-item list-group-item-action d-flex flex-wrap align-items-center gap-2 fundus-date-btn';
+      item.dataset.id = d.id || '';
+      item.style.justifyContent = 'flex-start';
+      const left = document.createElement('div');
+      left.className = 'd-flex flex-column text-start';
+      left.style.flex = '1 1 auto';
+      left.style.minWidth = '0';
+      const dateRow = document.createElement('div');
+      dateRow.className = 'fw-semibold' + (String(d.date || '').length ? '' : ' text-muted');
+      dateRow.innerHTML = '<i class="fa-regular fa-calendar me-1"></i>' + escapeHtml(d.date || '-');
+      const svcRow = document.createElement('div');
+      svcRow.className = 'small text-muted';
+      const svcLabel =
+        (d.serviceCode ? escapeHtml(String(d.serviceCode)) : '') +
+        (d.serviceCode && d.serviceName ? ' - ' : '') +
+        (d.serviceName ? escapeHtml(String(d.serviceName)) : '');
+      svcRow.textContent = svcLabel || 'ไม่ระบุหน่วยบริการ';
+      left.appendChild(dateRow);
+      left.appendChild(svcRow);
+      const delWrap = document.createElement('span');
+      delWrap.className = 'fundus-date-delete-wrap';
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'btn btn-outline-secondary btn-sm py-0 px-2 btn-fundus-delete-date';
+      delBtn.setAttribute('data-id', d.id || '');
+      delBtn.setAttribute('title', 'ลบวันที่ตรวจตา (ลบได้เฉพาะวันที่ไม่มีคนตรวจ)');
+      delBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+      delBtn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const did = delBtn.getAttribute('data-id') || '';
+        if (!did) return;
+        confirmDeleteFundusDate_(did, d);
+      });
+      delWrap.appendChild(delBtn);
+      const ic = document.createElement('i');
+      ic.className = 'fa-solid fa-chevron-right text-muted';
+      item.appendChild(left);
+      item.appendChild(delWrap);
+      item.appendChild(ic);
+      if (state.selectedFundusDateId && d.id && state.selectedFundusDateId === d.id) {
+        item.classList.add('fundus-date-btn-active');
+      }
+      frag.appendChild(item);
+    }
+    listEl.appendChild(frag);
+    listEl.querySelectorAll('.fundus-date-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        if (e.target && e.target.closest && e.target.closest('.btn-fundus-delete-date')) return;
+        const id = btn.getAttribute('data-id') || '';
+        if (!id) return;
+        selectFundusDate(id);
+      });
+    });
+  }
+
+  function confirmDeleteFundusDate_(dateId, dRec) {
+    if (!dateId) return;
+    const user = getCurrentUser();
+    if (!user) { handleNeedLogin(); return; }
+
+    const hdr = dRec && dRec.date ? String(dRec.date) : '';
+    const svc = dRec && dRec.serviceName ? String(dRec.serviceName) : '';
+
+    // สร้าง HTML ข้อความรายละเอียดสำหรับ SweetAlert2
+    let htmlContent = '';
+    if (hdr) htmlContent += `<b>วันที่ตรวจ:</b> ${hdr}<br>`;
+    if (svc) htmlContent += `<b>หน่วยบริการ:</b> ${svc}<br>`;
+    htmlContent += `<br><span style="color: #d33;">(สามารถลบได้เฉพาะวันที่ <b>ไม่มีคนตรวจตาอยู่</b> เท่านั้น)</span>`;
+
+    // เรียกใช้ SweetAlert2 Confirm
+    Swal.fire({
+      title: 'ยืนยันการลบวันที่ตรวจตา?',
+      html: htmlContent,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'ใช่, ลบเลย',
+      cancelButtonText: 'ยกเลิก'
+    }).then((result) => {
+      if (!result.isConfirmed) return;
+
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res) return;
+          if (res.needLogin) { handleNeedLogin(); return; }
+          if (!res.success) {
+            // แสดง Swal หรือ Toast เมื่อเกิดข้อผิดพลาด
+            Swal.fire({
+              icon: 'error',
+              title: 'เกิดข้อผิดพลาด',
+              text: res.message || 'ไม่สามารถลบข้อมูลได้',
+              timer: 2500,
+              showConfirmButton: false
+            });
+            return;
+          }
+
+          // แสดง Swal แบบ Toast แจ้งเตือนเมื่อลบสำเร็จ
+          Swal.fire({
+            icon: 'success',
+            title: res.message || 'ลบวันที่ตรวจตาสำเร็จ',
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 1600
+          });
+
+          if (state.selectedFundusDateId === dateId) {
+            state.selectedFundusDateId = null;
+            state.selectedFundusDate = null;
+            state.fundusRecords = [];
+            const area = el('fundusDataArea');
+            const noSel = el('fundusNoSelected');
+            if (area) area.classList.add('d-none');
+            if (noSel && (state.fundusDates || []).length) noSel.classList.remove('d-none');
+            hideFundusRecordForm();
+            renderFundusRecords();
+          }
+          fetchFundusDates();
+        })
+        .withFailureHandler(function () {
+          Swal.fire({
+            icon: 'error',
+            title: 'การเชื่อมต่อขัดข้อง',
+            text: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่',
+            timer: 2000,
+            showConfirmButton: false
+          });
+        })
+        .deleteFundusDate(dateId, user);
+    });
+  }
+
+  function populateFundusResultDropdowns_() {
+    const opts = state.fundusResultOptions || [];
+    const buildOptions = function (currentVal) {
+      let html = '<option value="">-</option>';
+      for (let i = 0; i < opts.length; i++) {
+        const v = String(opts[i] || '').trim();
+        if (!v) continue;
+        const sel = (currentVal && currentVal === v) ? ' selected' : '';
+        html += '<option value="' + escapeHtml(v) + '"' + sel + '>' + escapeHtml(v) + '</option>';
+      }
+      return html;
+    };
+    const leftSel = el('ff_resultLeft');
+    const rightSel = el('ff_resultRight');
+    const leftCur = leftSel ? String(leftSel.value || '') : '';
+    const rightCur = rightSel ? String(rightSel.value || '') : '';
+    if (leftSel) leftSel.innerHTML = buildOptions(leftCur);
+    if (rightSel) rightSel.innerHTML = buildOptions(rightCur);
+  }
+
+  function fetchFundusOptions_() {
+    return new Promise(function (resolve) {
+      const user = getCurrentUser();
+      if (!user) { resolve(); return; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success && Array.isArray(res.resultOptions)) {
+            state.fundusResultOptions = res.resultOptions;
+          }
+          populateFundusResultDropdowns_();
+          resolve();
+        })
+        .withFailureHandler(function () {
+          populateFundusResultDropdowns_();
+          resolve();
+        })
+        .getFundusOptions(user);
+    });
+  }
+
+  function clearFundusRecordSelection_() {
+    state.selectedFundusRecordId = null;
+    state.fundusIsEditing = false;
+    const banner = el('fundusEditingBanner');
+    const bannerText = el('fundusEditingBannerText');
+    if (banner) banner.classList.add('d-none');
+    if (bannerText) bannerText.textContent = 'กำลังแก้ไขผลตรวจตา';
+    const ffIdsPerson = ['ff_hn', 'ff_prefix', 'ff_firstName', 'ff_lastName', 'ff_weight', 'ff_height', 'ff_waist', 'ff_sbp', 'ff_dbp', 'ff_pr'];
+    ffIdsPerson.forEach(function (id) {
+      const n = el(id);
+      if (!n) return;
+      n.removeAttribute('readonly');
+      n.removeAttribute('disabled');
+    });
+  }
+
+  function selectFundusDate(dateId) {
+    const id = String(dateId || '').trim();
+    if (!id) return;
+    state.selectedFundusDateId = id;
+    const found = (state.fundusDates || []).find(function (d) { return d.id === id; });
+    state.selectedFundusDate = found || null;
+    clearFundusRecordSelection_();
+    renderFundusDateList();
+    const sdEl = el('fundusSelectedDate');
+    const svEl = el('fundusSelectedService');
+    if (sdEl) sdEl.textContent = (found && found.date) ? String(found.date) : '-';
+    if (svEl) {
+      let svcTxt = 'ไม่ระบุ';
+      if (found) {
+        svcTxt = (found.serviceCode ? String(found.serviceCode) : '') +
+          (found.serviceCode && found.serviceName ? ' - ' : '') +
+          (found.serviceName ? String(found.serviceName) : '');
+        if (!svcTxt) svcTxt = 'ไม่ระบุ';
+      }
+      svEl.textContent = svcTxt;
+    }
+    const noSel = el('fundusNoSelected');
+    const area = el('fundusDataArea');
+    if (noSel) noSel.classList.add('d-none');
+    if (area) area.classList.remove('d-none');
+    if (el('fundusRecordCount')) el('fundusRecordCount').textContent = '0';
+    hideFundusRecordForm();
+    
+    // แสดง Table Loader
+    const tblLoader = el('fundusTableLoader');
+    const tblWrap = el('fundusTable') ? el('fundusTable').closest('.table-responsive') : null;
+    if (tblLoader) tblLoader.classList.remove('d-none');
+    // ซ่อนตารางชั่วคราวขณะโหลด
+    const tbody = el('fundusTable') ? el('fundusTable').querySelector('tbody') : null;
+    if (tbody) tbody.innerHTML = '';
+    
+    loadFundusRecordsFor(id).finally(function() {
+      if (tblLoader) tblLoader.classList.add('d-none');
+    });
+  }
+
+  function loadFundusRecordsFor(dateId) {
+    return new Promise(function (resolve) {
+      const user = getCurrentUser();
+      if (!user) { resolve(); return; }
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res) { resolve(); return; }
+          if (res.needLogin) { handleNeedLogin(); resolve(); return; }
+          if (!res.success) { if (res.message) toast(res.message, 'error', 2000); resolve(); return; }
+          state.fundusRecords = Array.isArray(res.records) ? res.records : [];
+          if (res.dateRecord) {
+            state.selectedFundusDate = res.dateRecord;
+            if (!state.selectedFundusDateId) state.selectedFundusDateId = String(res.dateRecord.id || '');
+          }
+          renderFundusRecords();
+          // Ensure table is refreshed after loading data
+          refreshFundusTable();
+          resolve();
+        })
+        .withFailureHandler(function () { resolve(); })
+        .getFundusByDate(dateId, user);
+    });
+  }
+
+  function renderFundusRecords() {
+    const rc = el('fundusRecordCount');
+    const records = state.fundusRecords || [];
+    if (rc) rc.textContent = String(records.length);
+    initFundusTable();
+  }
+
+  function refreshFundusTable() {
+    // Force refresh the DataTable to ensure data is up to date
+    if (state.fundusTable) {
+      try {
+        state.fundusTable.clear();
+        state.fundusTable.rows.add(state.fundusRecords || []);
+        state.fundusTable.draw();
+      } catch (e) {
+        // If clear fails, destroy and reinitialize
+        try { state.fundusTable.destroy(); } catch (err) {}
+        state.fundusTable = null;
+        initFundusTable();
+      }
+    } else {
+      initFundusTable();
+    }
+  }
+
+  function initFundusTable() {
+    const tblEl = el('fundusTable');
+    if (!tblEl) return;
+    const dataSource = state.fundusRecords || [];
+
+    // ==========================================
+    // 1. วางตัวแปรปุ่ม และ DOM ไว้ตรงนี้
+    // ==========================================
+    const tableButtons = [
+      {
+        extend: 'excelHtml5',
+        text: '<i class="fa-solid fa-file-excel me-1"></i> Excel',
+        className: 'btn btn-success btn-sm me-1',
+        exportOptions: { columns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+        title: function () {
+          const selectedDate = state.selectedFundusDate || {};
+          const dateStr = selectedDate.date || '-';
+          const serviceName = selectedDate.serviceName || '';
+          const serviceCode = selectedDate.serviceCode || '';
+          const serviceDisplay = serviceCode && serviceName ? (serviceCode + ' - ' + serviceName) : (serviceName || serviceCode || '-');
+          return 'วันที่ตรวจตา : ' + dateStr + '  |  สถานที่ตรวจตา : ' + serviceDisplay;
+        }
+      },
+      // {
+      //   extend: 'pdfHtml5',
+      //   text: '<i class="fa-solid fa-file-pdf me-1"></i> PDF',
+      //   className: 'btn btn-danger btn-sm me-1',
+      //   exportOptions: { columns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] }
+      // },
+      {
+        extend: 'print',
+        text: '<i class="fa-solid fa-print me-1"></i> พิมพ์',
+        className: 'btn btn-secondary btn-sm me-1',
+        exportOptions: { columns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+        customize: function (win) {
+          const $body = jQuery(win.document.body);
+          $body.css('font-size', '9pt');
+          $body.find('table')
+            .addClass('compact')
+            .css('font-size', 'inherit');
+          $body.find('h1').css({
+            'text-align': 'center',
+            'font-size': '12pt',
+            'margin-bottom': '20px'
+          });
+
+          // เพิ่มข้อมูลวันที่ตรวจและสถานที่ตรวจเป็นแถวแรกใน thead เดียวกับหัวตาราง
+          const selectedDate = state.selectedFundusDate || {};
+          const dateStr = selectedDate.date || '-';
+          const serviceName = selectedDate.serviceName || '';
+          const serviceCode = selectedDate.serviceCode || '';
+          const serviceDisplay = serviceCode && serviceName ? (serviceCode + ' - ' + serviceName) : (serviceName || serviceCode || '-');
+          const headerInfo = 'วันที่ตรวจตา : ' + dateStr + ' | สถานที่ตรวจตา : ' + serviceDisplay;
+
+          const $table = $body.find('table');
+          const $thead = $table.find('thead').first();
+          const $originalHeaderRow = $thead.find('tr').first();
+
+          // สร้างแถวใหม่สำหรับข้อมูลวันที่และสถานที่
+          const $headerRow = jQuery('<tr></tr>');
+          const $headerCell = jQuery('<th></th>')
+            .attr('colspan', $originalHeaderRow.find('th').length)
+            .css({
+              'text-align': 'center',
+              'font-size': '11pt',
+              'font-weight': 'bold',
+              'padding': '10px',
+              'background-color': '#f8f9fa',
+              'border': '1px solid #ddd'
+            })
+            .text(headerInfo);
+          $headerRow.append($headerCell);
+
+          // แทรกแถวใหม่ก่อนแถวหัวตารางเดิมใน thead เดียวกัน
+          $thead.prepend($headerRow);
+
+          // เพิ่ม CSS สำหรับการพิมพ์ - บังคับ A4 แนวนอน และหัวข้อซ้ำทุกหน้า
+          const style = win.document.createElement('style');
+          style.innerHTML = '@page { size: A4 landscape; margin: 1cm; } @media print { table { border-collapse: collapse !important; } th, td { border: 0.5px solid #ddd !important; padding: 8px !important; } thead { display: table-header-group; } tfoot { display: table-footer-group; } }';
+          win.document.head.appendChild(style);
+        }
+      }
+    ];
+
+    const tableDom = "<'row'<'col-sm-12 col-md-4 mb-2 mb-md-0'l><'col-sm-12 col-md-4 text-center mb-2 mb-md-0'B><'col-sm-12 col-md-4'f>>" +
+                    "<'row'<'col-sm-12'tr>>" +
+                    "<'row mt-2'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>";
+
+    const langThai = {
+      emptyTable: 'ยังไม่มีรายการบันทึกผลตรวจตา',
+      info: 'แสดง _START_ ถึง _END_ จากทั้งหมด _TOTAL_ รายการ',
+      infoEmpty: 'แสดง 0 ถึง 0 จากทั้งหมด 0 รายการ',
+      infoFiltered: '(กรองจากทั้งหมด _MAX_ รายการ)',
+      lengthMenu: 'แสดง _MENU_ รายการ',
+      loadingRecords: 'กำลังโหลด...',
+      processing: 'กำลังประมวลผล...',
+      search: 'ค้นหา:',
+      zeroRecords: 'ไม่พบรายการที่ตรงกัน',
+      thousands: ',',
+      paginate: {
+        first: 'แรก',
+        last: 'สุดท้าย',
+        next: 'ถัดไป',
+        previous: 'ก่อนหน้า'
+      }
+    };
+
+    const commonColumns = [
+      {
+        title: 'ลำดับ',
+        data: null,
+        className: 'text-center',
+        render: function (data, type, row, meta) {
+          return meta.row + 1;
+        }
+      },
+      {
+        title: 'HN',
+        data: null,
+        render: function (data, type, row) { return escapeHtml(formatHN(row.hn || '')); }
+      },
+      {
+        title: 'ชื่อ-นามสกุล',
+        data: null,
+        render: function (data, type, row) {
+          const fullName = [row.prefix, row.firstName, row.lastName].filter(Boolean).join(' ');
+          return escapeHtml(fullName || '-');
+        }
+      },
+      {
+        title: 'น้ำหนัก',
+        data: null,
+        render: function (data, type, row) { return escapeHtml(row.weight || '-'); }
+      },
+      {
+        title: 'ส่วนสูง',
+        data: null,
+        render: function (data, type, row) { return escapeHtml(row.height || '-'); }
+      },
+      {
+        title: 'รอบเอว',
+        data: null,
+        render: function (data, type, row) { return escapeHtml(row.waist || '-'); }
+      },
+      {
+        title: 'BP',
+        data: null,
+        render: function (data, type, row) {
+          const bp = ((row.sbp && row.dbp) ? (row.sbp + '/' + row.dbp) : (row.sbp || row.dbp || '-'));
+          return escapeHtml(bp);
+        }
+      },
+      {
+        title: 'PR',
+        data: null,
+        render: function (data, type, row) { return escapeHtml(row.pr || '-'); }
+      },
+      {
+        title: 'ตาซ้าย',
+        data: null,
+        render: function (data, type, row) {
+          if (!row.resultLeft) return '<span class="fundus-empty-cell">-</span>';
+          const result = String(row.resultLeft).trim();
+          const isSevere = result === 'Severe NPDR' || result === 'PDR';
+          if (isSevere) {
+            return '<span class="fundus-result-badge-severe">' + escapeHtml(result) + '</span>';
+          }
+          return escapeHtml(result);
+        }
+      },
+      {
+        title: 'ตาขวา',
+        data: null,
+        render: function (data, type, row) {
+          if (!row.resultRight) return '<span class="fundus-empty-cell">-</span>';
+          const result = String(row.resultRight).trim();
+          const isSevere = result === 'Severe NPDR' || result === 'PDR';
+          if (isSevere) {
+            return '<span class="fundus-result-badge-severe">' + escapeHtml(result) + '</span>';
+          }
+          return escapeHtml(result);
+        }
+      },
+      {
+        title: 'นัดครั้งต่อไป',
+        data: null,
+        className: 'text-center',
+        render: function (data, type, row) {
+          const nextAppt = row.nextAppointment || '';
+          if (!nextAppt) return '<span class="text-muted">-</span>';
+          return escapeHtml(nextAppt);
+        }
+      },
+      {
+        title: 'มาตามนัด',
+        data: null,
+        className: 'text-center',
+        render: function (data, type, row) {
+          const status = row.appointmentStatus || '';
+          let badge = '';
+          if (status === 'มาตามนัด') {
+            badge = '<span class="badge bg-success">มา</span>';
+          } else if (status === 'ไม่มาตามนัด') {
+            badge = '<span class="badge bg-danger">ไม่มา</span>';
+          } else {
+            badge = '<span class="badge bg-secondary">-</span>';
+          }
+          return badge;
+        }
+      },
+      {
+        title: 'บันทึกเพิ่มเติม',
+        data: null,
+        className: 'text-center',
+        render: function (data, type, row) {
+          const note = row.appointmentNote || '';
+          if (!note) return '<span class="text-muted">-</span>';
+          // Truncate note if too long
+          const maxLength = 20;
+          const displayNote = note.length > maxLength ? note.substring(0, maxLength) + '...' : note;
+          return '<span title="' + escapeHtml(note) + '">' + escapeHtml(displayNote) + '</span>';
+        }
+      },
+      {
+        title: 'จัดการ',
+        data: null,
+        orderable: false,
+        searchable: false,
+        className: 'text-center',
+        render: function (data, type, row, meta) {
+          const idx = meta.row;
+          return '<div class="fundus-action-btns">' +
+            '<button type="button" class="btn btn-outline-secondary btn-sm btn-fundus-edit" data-idx="' + idx + '" title="แก้ไข/บันทึกผลตรวจ">' +
+            '<i class="fa-solid fa-pen-to-square me-1"></i>แก้ไข</button>' +
+            '<button type="button" class="btn btn-outline-danger btn-sm btn-fundus-delete-row" data-idx="' + idx + '" title="ลบรายการคนตรวจตา">ลบ</button>' +
+            '</div>';
+        }
+      }
+    ];
+
+    if (typeof jQuery !== 'undefined' && jQuery.fn && jQuery.fn.dataTable) {
+      const $tbl = jQuery(tblEl);
+      $tbl.off('click.dt-fundus-edit');
+      $tbl.off('click.dt-fundus-delete');
+      $tbl.on('click.dt-fundus-edit', '.btn-fundus-edit', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const btn = this;
+        const idx = Number(btn.getAttribute('data-idx'));
+        if (isNaN(idx) || idx < 0) return;
+        const rec = state.fundusRecords[idx];
+        if (!rec || !rec.id) return;
+        selectFundusRecordForEdit_(rec.id);
+      });
+      $tbl.on('click.dt-fundus-delete', '.btn-fundus-delete-row', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const btn = this;
+        const idx = Number(btn.getAttribute('data-idx'));
+        if (isNaN(idx) || idx < 0) return;
+        const rec = state.fundusRecords[idx];
+        if (!rec || !rec.id) return;
+        confirmDeleteFundusRecord_(rec);
+      });
+
+      if (state.fundusTable) {
+        try {
+          state.fundusTable.clear();
+          state.fundusTable.rows.add(dataSource);
+          state.fundusTable.draw();
+        } catch (e) {
+          try { state.fundusTable.destroy(); } catch (err) {}
+          state.fundusTable = null;
+          const tbody = tblEl.querySelector('tbody');
+          if (tbody) tbody.innerHTML = '';
+          
+          // ==========================================
+          // 2. ใส่ dom และ buttons จุดที่ 1 (Re-init)
+          // ==========================================
+          state.fundusTable = $tbl.DataTable({
+            destroy: true,
+            data: dataSource,
+            columns: commonColumns,
+            ordering: false,
+            pageLength: 10,
+            lengthMenu: [[10, 25, 50, 100], [10, 25, 50, 100]],
+            language: langThai,
+            dom: tableDom,
+            buttons: tableButtons,
+            autoWidth: false,
+            responsive: false,
+            createdRow: function (row, data) {
+              const selId = String(state.selectedFundusRecordId || '');
+              if (data && data.id && String(data.id) === selId) {
+                row.classList.add('fundus-row-selected');
+              }
+            }
+          });
+        }
+      } else {
+        // ==========================================
+        // 3. ใส่ dom และ buttons จุดที่ 2 (Init ครั้งแรก)
+        // ==========================================
+        state.fundusTable = $tbl.DataTable({
+          destroy: true,
+          data: dataSource,
+          columns: commonColumns,
+          ordering: false,
+          pageLength: 10,
+          lengthMenu: [[10, 25, 50, 100], [10, 25, 50, 100]],
+          language: langThai,
+          dom: tableDom,
+          buttons: tableButtons,
+          autoWidth: false,
+          responsive: false,
+          createdRow: function (row, data) {
+            const selId = String(state.selectedFundusRecordId || '');
+            if (data && data.id && String(data.id) === selId) {
+              row.classList.add('fundus-row-selected');
+            }
+          }
+        });
+      }
+    }
+  }
+
+  function confirmDeleteFundusRecord_(rec) {
+    if (!rec || !rec.id) return;
+    const user = getCurrentUser();
+    if (!user) { handleNeedLogin(); return; }
+
+    const hn = rec.hn ? formatHN(rec.hn) : '';
+    const name = [rec.prefix, rec.firstName, rec.lastName].filter(Boolean).join(' ');
+
+    // สร้าง HTML ข้อความรายละเอียดสำหรับ SweetAlert2
+    let htmlContent = '';
+    htmlContent += `<b>HN:</b> ${hn || '-'}<br>`;
+    htmlContent += `<b>ชื่อ-นามสกุล:</b> ${name || '-'}<br>`;
+    htmlContent += `<br>ยืนยันว่าต้องการ<b>ลบรายการคนตรวจตานี้</b>ใช่หรือไม่?`;
+
+    // เรียกใช้ SweetAlert2 Confirm
+    Swal.fire({
+      title: 'ยืนยันการลบรายการตรวจตา?',
+      html: htmlContent,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'ใช่, ลบเลย',
+      cancelButtonText: 'ยกเลิก'
+    }).then((result) => {
+      if (!result.isConfirmed) return;
+
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res) return;
+          if (res.needLogin) { handleNeedLogin(); return; }
+          if (!res.success) {
+            Swal.fire({
+              icon: 'error',
+              title: 'เกิดข้อผิดพลาด',
+              text: res.message || 'ไม่สามารถลบข้อมูลได้',
+              timer: 2500,
+              showConfirmButton: false
+            });
+            return;
+          }
+
+          // แสดง Swal แบบ Toast แจ้งเตือนเมื่อลบสำเร็จ
+          Swal.fire({
+            icon: 'success',
+            title: res.message || 'ลบรายการคนตรวจตาสำเร็จ',
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 1600
+          });
+
+          // Remove any lingering backdrops from Swal
+          setTimeout(function() {
+            const backdrops = document.querySelectorAll('.swal2-backdrop-show');
+            backdrops.forEach(function(backdrop) {
+              backdrop.remove();
+            });
+          }, 100);
+
+          // If the deleted record was selected, clear selection
+          if (state.selectedFundusRecordId === rec.id) {
+            clearFundusRecordSelection_();
+            setFundusFormEditingState_(false);
+            resetFundusRecordForm_();
+          }
+
+          // Reload records for the date
+          if (state.selectedFundusDateId) {
+            loadFundusRecordsFor(state.selectedFundusDateId).then(function() {
+              // Force table refresh with empty data handling
+              const tblEl = el('fundusTable');
+              if (tblEl && state.fundusTable) {
+                try {
+                  state.fundusTable.clear();
+                  state.fundusTable.rows.add(state.fundusRecords || []);
+                  state.fundusTable.draw();
+                } catch (e) {
+                  // If refresh fails, reinitialize
+                  try { state.fundusTable.destroy(); } catch (err) {}
+                  state.fundusTable = null;
+                  initFundusTable();
+                }
+              } else {
+                initFundusTable();
+              }
+            });
+          } else {
+            renderFundusRecords();
+          }
+        })
+        .withFailureHandler(function () {
+          Swal.fire({
+            icon: 'error',
+            title: 'การเชื่อมต่อขัดข้อง',
+            text: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่',
+            timer: 2000,
+            showConfirmButton: false
+          });
+        })
+        .deleteFundusRecord(rec.id, user);
+    });
+  }
+
+  function fundusHNLookupClick_() {
+    const user = getCurrentUser();
+    if (!user) { handleNeedLogin(); return; }
+    if (state.fundusIsEditing) {
+      toast('ไม่สามารถค้นหา HN ขณะกำลังแก้ไขได้ (ยกเลิกการแก้ไขก่อน)', 'warning', 2000);
+      return;
+    }
+    const hnInput = el('ff_hn');
+    const hnVal = hnInput ? String(hnInput.value || '').trim() : '';
+    if (!hnVal) {
+      toast('กรุณาระบุ HN ที่ต้องการค้นหาก่อน', 'warning', 1700);
+      if (hnInput) hnInput.focus();
+      return;
+    }
+
+    const btn = el('btnFundusHNLookup');
+    setBtnLoading(btn, '');
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        resetBtn(btn);
+        if (!res || res.needLogin) {
+          if (res && res.needLogin) handleNeedLogin();
+          return;
+        }
+        if (!res.success || !res.data) {
+          const typedHN = hnVal;
+          resetFundusRecordForm_();
+          if (hnInput) hnInput.value = typedHN;
+          Swal.fire({
+            icon: 'error',
+            title: 'ไม่พบข้อมูล',
+            text: 'ไม่พบ HN ' + formatHN(hnVal) + ' ในฐานข้อมูล (ต้องเพิ่มรายชื่อผู้ป่วยก่อนจึงจะสามารถบันทึกตรวจตาได้)',
+            confirmButtonColor: '#2859a8',
+            confirmButtonText: 'ตกลง'
+          });
+          return;
+        }
+
+        // Check if HN already exists in state.fundusRecords (same date)
+        const isDupe = (state.fundusRecords || []).some(function (r) {
+          return String(r.hn || '').trim() === hnVal;
+        });
+
+        if (isDupe) {
+          resetFundusRecordForm_();
+          Swal.fire({
+            icon: 'warning',
+            title: 'พบข้อมูลซ้ำ',
+            text: 'HN ' + formatHN(hnVal) + ' มีข้อมูลการตรวจในวันที่เลือกนี้อยู่แล้ว',
+            confirmButtonColor: '#2859a8',
+            confirmButtonText: 'ตกลง'
+          });
+          if (hnInput) hnInput.focus();
+          return;
+        }
+
+        const p = res.data;
+        const prefixSel = el('ff_prefix');
+        const firstInp = el('ff_firstName');
+        const lastInp = el('ff_lastName');
+        if (prefixSel) {
+          prefixSel.value = p.prefix || '';
+          prefixSel.setAttribute('readonly', 'readonly');
+          prefixSel.setAttribute('disabled', 'disabled');
+        }
+        if (firstInp) {
+          firstInp.value = p.firstName || '';
+          firstInp.setAttribute('readonly', 'readonly');
+          firstInp.setAttribute('required', 'required');
+        }
+        if (lastInp) {
+          lastInp.value = p.lastName || '';
+          lastInp.setAttribute('readonly', 'readonly');
+          lastInp.setAttribute('required', 'required');
+        }
+        
+        Swal.fire({
+          icon: 'success',
+          title: 'พบข้อมูล',
+          text: 'พบข้อมูล HN ' + formatHN(hnVal) + ' : ' + ([p.prefix, p.firstName, p.lastName].filter(Boolean).join(' ')),
+          timer: 2500,
+          showConfirmButton: false
+        });
+
+        // Focus on next required field: weight
+        setTimeout(function () {
+          const wt = el('ff_weight');
+          if (wt) wt.focus();
+        }, 60);
+      })
+      .withFailureHandler(function () {
+        resetBtn(btn);
+        toast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่', 'error', 2000);
+      })
+      .getPersonByHN(hnVal, user);
+  }
+
+  // function setFundusFormEditingState_(isEditing) {
+  //   state.fundusIsEditing = !!isEditing;
+  //   const legend = el('fundusFormLegend');
+  //   const btnLabel = el('btnFundusRecordLabel');
+  //   const submitBtn = el('btnFundusRecordSubmit');
+  //   const ffIdsPerson = ['ff_hn', 'ff_prefix', 'ff_firstName', 'ff_lastName', 'ff_weight', 'ff_height', 'ff_waist', 'ff_sbp', 'ff_dbp', 'ff_pr'];
+  //   if (isEditing) {
+  //     if (legend) legend.textContent = 'แก้ไขผลตรวจตา';
+  //     if (btnLabel) btnLabel.textContent = 'บันทึกการแก้ไข';
+  //     if (submitBtn) {
+  //       submitBtn.innerHTML = '<i class="fa-solid fa-pen me-1"></i><span id="btnFundusRecordLabel">บันทึกการแก้ไข</span>';
+  //     }
+  //     ffIdsPerson.forEach(function (id) {
+  //       const n = el(id);
+  //       if (!n) return;
+  //       n.setAttribute('readonly', 'readonly');
+  //     });
+  //     ['ff_hn', 'ff_firstName'].forEach(function (id) {
+  //       const n = el(id);
+  //       if (n) n.removeAttribute('required');
+  //     });
+  //   } else {
+  //     if (legend) legend.textContent = 'เพิ่มผู้ป่วย';
+  //     if (btnLabel) btnLabel.textContent = 'บันทึก';
+  //     if (submitBtn) {
+  //       submitBtn.innerHTML = '<i class="fa-solid fa-save me-1"></i><span id="btnFundusRecordLabel">บันทึก</span>';
+  //     }
+  //     ffIdsPerson.forEach(function (id) {
+  //       const n = el(id);
+  //       if (!n) return;
+  //       if (['ff_prefix', 'ff_firstName', 'ff_lastName'].indexOf(id) !== -1) {
+  //         n.setAttribute('readonly', 'readonly');
+  //         if (id === 'ff_prefix') n.setAttribute('disabled', 'disabled');
+  //       } else {
+  //         n.removeAttribute('readonly');
+  //         n.removeAttribute('disabled');
+  //       }
+  //     });
+  //     ['ff_hn', 'ff_firstName'].forEach(function (id) {
+  //       const n = el(id);
+  //       if (n) n.setAttribute('required', 'required');
+  //     });
+  //   }
+  // }
+
+  function setFundusFormEditingState_(isEditing) {
+    state.fundusIsEditing = !!isEditing;
+    const legend = el('fundusFormLegend');
+    const btnLabel = el('btnFundusRecordLabel');
+    const submitBtn = el('btnFundusRecordSubmit');
+
+    // รายการฟิลด์ที่ต้องการให้ Readonly เสมอ
+    const ffReadOnlyIds = ['ff_hn', 'ff_prefix', 'ff_firstName', 'ff_lastName'];
+
+    if (isEditing) {
+      if (legend) legend.textContent = 'แก้ไขผลตรวจตา';
+      if (btnLabel) btnLabel.textContent = 'บันทึกการแก้ไข';
+      if (submitBtn) {
+        submitBtn.innerHTML = '<i class="fa-solid fa-pen me-1"></i><span id="btnFundusRecordLabel">บันทึกการแก้ไข</span>';
+      }
+
+      ['ff_hn', 'ff_firstName'].forEach(function (id) {
+        const n = el(id);
+        if (n) n.removeAttribute('required');
+      });
+    } else {
+      if (legend) legend.textContent = 'เพิ่มผู้ป่วย';
+      if (btnLabel) btnLabel.textContent = 'บันทึก';
+      if (submitBtn) {
+        submitBtn.innerHTML = '<i class="fa-solid fa-save me-1"></i><span id="btnFundusRecordLabel">บันทึก</span>';
+      }
+
+      ['ff_hn', 'ff_firstName'].forEach(function (id) {
+        const n = el(id);
+        if (n) n.setAttribute('required', 'required');
+      });
+    }
+
+    // ตั้งค่าเฉพาะกลุ่มที่ต้องการให้ Readonly
+    ffReadOnlyIds.forEach(function (id) {
+      const n = el(id);
+      if (!n) return;
+      n.setAttribute('readonly', 'readonly');
+      if (id === 'ff_prefix') {
+        n.setAttribute('disabled', 'disabled');
+      }
+    });
+  }
+
+  function selectFundusRecordForEdit_(recordId) {
+    const rid = String(recordId || '').trim();
+    if (!rid) return;
+    const found = (state.fundusRecords || []).find(function (r) { return r.id && String(r.id) === rid; });
+    if (!found) return;
+    state.selectedFundusRecordId = rid;
+    state.fundusIsEditing = true;
+    setFundusFormEditingState_(true);
+    showFundusRecordForm();
+    populateFundusFormFromRecord_(found);
+    const banner = el('fundusEditingBanner');
+    const bannerText = el('fundusEditingBannerText');
+    if (banner) banner.classList.remove('d-none');
+    if (bannerText) {
+      const hnTxt = formatHN(found.hn || '');
+      const nm = [found.prefix, found.firstName, found.lastName].filter(Boolean).join(' ');
+      bannerText.textContent = 'กำลังแก้ไขผลตรวจตา : ' + (hnTxt ? ('HN ' + hnTxt) : '') + (nm ? (' ' + nm) : '');
+    }
+    renderFundusRecords();
+    setTimeout(function () {
+      const tgt = el('ff_resultLeft');
+      if (tgt) tgt.focus();
+    }, 70);
+  }
+
+  function populateFundusFormFromRecord_(r) {
+    if (!r) return;
+    const e = function (id, val) {
+      const node = el(id);
+      if (node) node.value = (val == null) ? '' : String(val);
+    };
+    e('ff_hn', r.hn || '');
+    e('ff_prefix', r.prefix || '');
+    e('ff_firstName', r.firstName || '');
+    e('ff_lastName', r.lastName || '');
+    e('ff_weight', r.weight || '');
+    e('ff_height', r.height || '');
+    e('ff_waist', r.waist || '');
+    e('ff_sbp', r.sbp || '');
+    e('ff_dbp', r.dbp || '');
+    e('ff_pr', r.pr || '');
+    e('ff_nextAppointment', r.nextAppointment || '');
+    populateFundusResultDropdowns_();
+    e('ff_resultLeft', r.resultLeft || '');
+    e('ff_resultRight', r.resultRight || '');
+    e('ff_appointmentStatus', r.appointmentStatus || '');
+    e('ff_appointmentNote', r.appointmentNote || '');
+  }
+
+  function checkAppointmentSlotAvailable_(appointmentDate, excludeRecordId) {
+    if (!appointmentDate) return true;
+    
+    // Check if the appointment date is already used by any other patient
+    const isSlotTaken = (state.fundusRecords || []).some(function (r) {
+      // Skip the current record when editing
+      if (excludeRecordId && r.id === excludeRecordId) return false;
+      return r.nextAppointment && String(r.nextAppointment).trim() === appointmentDate;
+    });
+    
+    if (isSlotTaken) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'วันนัดครั้งต่อไปถูกจองแล้ว',
+        text: 'วันที่ ' + appointmentDate + ' มีผู้ป่วยนัดครั้งต่อไปอยู่แล้ว กรุณาเลือกวันอื่น',
+        confirmButtonColor: '#2859a8',
+        confirmButtonText: 'ตกลง'
+      });
+      return false;
+    }
+    
+    return true;
+  }
+
+  function resetFundusPage_() {
+    state.selectedFundusDateId = null;
+    state.selectedFundusDate = null;
+    state.fundusRecords = [];
+    state.fundusIsEditing = false;
+    
+    // ซ่อนแบบฟอร์มและล้างค่าในฟอร์ม
+    hideFundusRecordForm();
+    
+    // ซ่อนพื้นที่แสดงข้อมูลและข้อความแจ้งเตือน
+    const area = el('fundusDataArea');
+    const noSel = el('fundusNoSelected');
+    if (area) area.classList.add('d-none');
+    if (noSel) noSel.classList.add('d-none');
+    
+    // รีเซ็ตสถานะการเลือกในรายการวันที่ด้านซ้าย
+    renderFundusDateList();
+    
+    // ล้างข้อมูลในตาราง DataTable ถ้ามี
+    if (state.fundusTable) {
+      try {
+        state.fundusTable.clear().draw();
+      } catch (e) {}
+    }
+  }
+
+  function initFundusPage() {
+    const u = getCurrentUser();
+    const isAdmin = u && typeof u.role === 'string' && u.role.toLowerCase() === 'admin';
+    if (!isAdmin) return;
+    
+    // แสดง Initial Loader
+    const loader = el('fundusInitialLoader');
+    const content = el('fundusMainContent');
+    if (loader) loader.classList.remove('d-none');
+    if (content) content.classList.add('d-none');
+
+    // บังคับ Re-init Flatpickr สำหรับ fundusDateInput ทุกครั้งที่เปิดหน้า
+    setTimeout(function() {
+      if (typeof core.initThaiFlatpickrs === 'function') {
+        try { core.initThaiFlatpickrs(); } catch (e) { /* ignore */ }
+      }
+      // ตรวจสอบซ้ำอีกครั้งเฉพาะ fundusDateInput
+      const fdi = el('fundusDateInput');
+      if (fdi && (!state.datepickers || !state.datepickers['fundusDateInput'])) {
+        if (typeof flatpickr === 'function') {
+           // เรียกใช้โดยตรงถ้ายังไม่มี instance
+           if (typeof core.initThaiFlatpickrs === 'function') core.initThaiFlatpickrs(); 
+        }
+      }
+      // ตั้งค่าเริ่มต้นให้ วันที่ตรวจ เป็น readonly จนกว่าจะเลือกหน่วยบริการ
+      // if (fdi) fdi.setAttribute('readonly', 'readonly');
+    }, 150);
+
+    state.fundusIsEditing = false;
+    clearFundusRecordSelection_();
+    setFundusFormEditingState_(false);
+    fetchFundusOptions_().then(function () {
+      fetchFundusDates().then(function () {
+        // ซ่อน Initial Loader
+        if (loader) loader.classList.add('d-none');
+        if (content) content.classList.remove('d-none');
+
+        const data = state.fundusDates || [];
+        const noSel = el('fundusNoSelected');
+        const area = el('fundusDataArea');
+        if (state.selectedFundusDateId) {
+          const exists = data.some(function (d) { return d.id === state.selectedFundusDateId; });
+          if (exists) {
+            selectFundusDate(state.selectedFundusDateId);
+            return;
+          }
+        }
+        if (noSel && data.length) noSel.classList.remove('d-none');
+        if (area) area.classList.add('d-none');
+        if (noSel && !data.length) noSel.classList.add('d-none');
+      });
+    });
+  }
+
+  function showFundusRecordForm() {
+    const card = el('fundusFormCard');
+    if (!card) return;
+    card.classList.remove('d-none');
+    state.fundusFormVisible = true;
+    setFundusFormEditingState_(!!state.fundusIsEditing);
+    const focusTarget = state.fundusIsEditing ? el('ff_resultLeft') : el('ff_hn');
+    setTimeout(function () { if (focusTarget) focusTarget.focus(); }, 60);
+  }
+
+  function hideFundusRecordForm() {
+    const card = el('fundusFormCard');
+    if (card) card.classList.add('d-none');
+    state.fundusFormVisible = false;
+    state.fundusIsEditing = false;
+    clearFundusRecordSelection_();
+    const form = el('fundusRecordForm');
+    if (form) {
+      form.classList.remove('was-validated');
+      form.reset();
+    }
+    resetFundusRecordForm_();
+    setFundusFormEditingState_(false);
+    renderFundusRecords();
+  }
+
+  function resetFundusRecordForm_() {
+    const form = el('fundusRecordForm');
+    if (!form) return;
+    form.classList.remove('was-validated');
+    ['ff_hn','ff_prefix','ff_firstName','ff_lastName','ff_weight','ff_height','ff_waist','ff_sbp','ff_dbp','ff_pr','ff_nextAppointment','ff_resultLeft','ff_resultRight','ff_appointmentStatus','ff_appointmentNote'].forEach(function (id) {
+      const e = el(id);
+      if (e) e.value = '';
+    });
+    // Reset dropdown options (resultLeft/resultRight) with default "-"
+    populateFundusResultDropdowns_();
+    
+    // Reset readonly/disabled states to their default (readonly)
+    ['ff_prefix', 'ff_firstName', 'ff_lastName'].forEach(function(id) {
+      const e = el(id);
+      if (e) {
+        e.setAttribute('readonly', 'readonly');
+        if (id === 'ff_prefix') e.setAttribute('disabled', 'disabled');
+      }
+    });
+  }
+
+  function submitFundusDate(e) {
+    if (e) e.preventDefault();
+    const user = getCurrentUser();
+    if (!user) { handleNeedLogin(); return; }
+    const form = el('fundusDateForm');
+    if (form && !form.checkValidity()) {
+      form.classList.add('was-validated');
+      return;
+    }
+    if (form) form.classList.remove('was-validated');
+    const sv = el('fundusServiceSelect') ? el('fundusServiceSelect').value : '';
+    const parsed = getFundusHospitalFromSelect_(sv);
+    const dateRaw = el('fundusDateInput') ? el('fundusDateInput').value : '';
+    if (!dateRaw || !String(dateRaw).trim()) {
+      toast('กรุณาระบุ วันที่ตรวจ', 'warning', 1800);
+      return;
+    }
+    const btn = el('btnFundusDateSubmit');
+    const payload = {
+      date: String(dateRaw).trim(),
+      serviceCode: parsed.code || '',
+      serviceName: parsed.name || ''
+    };
+    setBtnLoading(btn, 'กำลังบันทึก...');
+    google.script.run
+      .withSuccessHandler(function (res) {
+        resetBtn(btn);
+        if (!res) return;
+        if (res.needLogin) { handleNeedLogin(); return; }
+        if (!res.success) {
+          if (res.message) toast(res.message, 'error', 2200);
+          return;
+        }
+        toast(res.message || 'เพิ่มวันที่ตรวจตาสำเร็จ', 'success', 1700);
+        if (form) form.reset();
+        const dfp = state.datepickers && state.datepickers['fundusDateInput'];
+        if (dfp) { try { dfp.clear(); } catch (e) {} }
+        fetchFundusDates().then(function () {
+          if (res.record && res.record.id) {
+            setTimeout(function () { selectFundusDate(res.record.id); }, 60);
+          }
+        });
+      })
+      .withFailureHandler(function () {
+        resetBtn(btn);
+        toast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่', 'error', 2000);
+      })
+      .createFundusDate(payload, user);
+  }
+
+  function submitFundusRecord(e) {
+    if (e) e.preventDefault();
+    const user = getCurrentUser();
+    if (!user) { handleNeedLogin(); return; }
+    const dateId = String(state.selectedFundusDateId || '').trim();
+    if (!dateId) { toast('กรุณาเลือกวันที่ตรวจก่อน', 'warning', 1700); return; }
+    const form = el('fundusRecordForm');
+    const isEditing = !!state.fundusIsEditing;
+    if (!isEditing) {
+      if (form && !form.checkValidity()) {
+        form.classList.add('was-validated');
+        return;
+      }
+    }
+    if (form) form.classList.remove('was-validated');
+    
+    // ตรวจสอบ slot วันนัดครั้งต่อไป
+    const nextAppointment = el('ff_nextAppointment') ? String(el('ff_nextAppointment').value || '').trim() : '';
+    if (nextAppointment && !isEditing) {
+      if (!checkAppointmentSlotAvailable_(nextAppointment)) {
+        return;
+      }
+    }
+    
+    const payload = {
+      hn: el('ff_hn') ? String(el('ff_hn').value || '').trim() : '',
+      prefix: el('ff_prefix') ? String(el('ff_prefix').value || '').trim() : '',
+      firstName: el('ff_firstName') ? String(el('ff_firstName').value || '').trim() : '',
+      lastName: el('ff_lastName') ? String(el('ff_lastName').value || '').trim() : '',
+      weight: el('ff_weight') ? String(el('ff_weight').value || '').trim() : '',
+      height: el('ff_height') ? String(el('ff_height').value || '').trim() : '',
+      waist: el('ff_waist') ? String(el('ff_waist').value || '').trim() : '',
+      sbp: el('ff_sbp') ? String(el('ff_sbp').value || '').trim() : '',
+      dbp: el('ff_dbp') ? String(el('ff_dbp').value || '').trim() : '',
+      pr: el('ff_pr') ? String(el('ff_pr').value || '').trim() : '',
+      resultLeft: el('ff_resultLeft') ? String(el('ff_resultLeft').value || '').trim() : '',
+      resultRight: el('ff_resultRight') ? String(el('ff_resultRight').value || '').trim() : '',
+      nextAppointment: nextAppointment,
+      appointmentStatus: el('ff_appointmentStatus') ? String(el('ff_appointmentStatus').value || '').trim() : '',
+      appointmentNote: el('ff_appointmentNote') ? String(el('ff_appointmentNote').value || '').trim() : ''
+    };
+    const btn = el('btnFundusRecordSubmit');
+    if (!isEditing) {
+      setBtnLoading(btn, 'กำลังบันทึก...');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          resetBtn(btn);
+          if (!res) return;
+          if (res.needLogin) { handleNeedLogin(); return; }
+          if (!res.success) {
+            if (res.message) toast(res.message, 'error', 2200);
+            return;
+          }
+          toast(res.message || 'บันทึกสำเร็จ', 'success', 1600);
+          resetFundusRecordForm_();
+          loadFundusRecordsFor(dateId).then(function () {
+            refreshFundusTable();
+            const hn = el('ff_hn');
+            if (hn) hn.focus();
+          });
+        })
+        .withFailureHandler(function () {
+          resetBtn(btn);
+          toast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่', 'error', 2000);
+        })
+        .addFundusRecord(dateId, payload, user);
+    } else {
+      const rid = String(state.selectedFundusRecordId || '').trim();
+      if (!rid) { toast('กรุณาเลือกรายการจากตารางด้านล่างก่อน', 'warning', 1700); return; }
+      
+      // ตรวจสอบ slot วันนัดครั้งต่อไป
+      if (payload.nextAppointment && !checkAppointmentSlotAvailable_(payload.nextAppointment, rid)) {
+        return;
+      }
+      
+      const patch = {
+        prefix: payload.prefix,
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        weight: payload.weight,
+        height: payload.height,
+        waist: payload.waist,
+        sbp: payload.sbp,
+        dbp: payload.dbp,
+        pr: payload.pr,
+        resultLeft: payload.resultLeft,
+        resultRight: payload.resultRight,
+        nextAppointment: payload.nextAppointment,
+        appointmentStatus: payload.appointmentStatus,
+        appointmentNote: payload.appointmentNote
+      };
+      setBtnLoading(btn, 'กำลังบันทึกการแก้ไข...');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          resetBtn(btn);
+          if (!res) return;
+          if (res.needLogin) { handleNeedLogin(); return; }
+          if (!res.success) {
+            if (res.message) toast(res.message, 'error', 2200);
+            return;
+          }
+          toast(res.message || 'บันทึกการแก้ไขสำเร็จ', 'success', 1600);
+          clearFundusRecordSelection_();
+          resetFundusRecordForm_();
+          state.fundusIsEditing = false;
+          setFundusFormEditingState_(false);
+          hideFundusRecordForm();
+          loadFundusRecordsFor(dateId).then(function() {
+            refreshFundusTable();
+          });
+        })
+        .withFailureHandler(function () {
+          resetBtn(btn);
+          toast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่', 'error', 2000);
+        })
+        .updateFundusRecord(rid, patch, user);
+    }
+  }
+
+  function initFundusEvents_() {
+    if (el('fundusServiceSelect')) {
+      el('fundusServiceSelect').addEventListener('change', function () {
+        const svcVal = this.value;
+        const dateInp = el('fundusDateInput');
+        if (!dateInp) return;
+        if (svcVal) {
+          dateInp.removeAttribute('readonly');
+          // สั่งเปิดปฏิทินทันทีหลังจากเลือกหน่วยบริการ
+          setTimeout(function () {
+            const fp = (state.datepickers || {})['fundusDateInput'];
+            if (fp) fp.open();
+            else dateInp.focus();
+          }, 100);
+        } else {
+          dateInp.setAttribute('readonly', 'readonly');
+          dateInp.value = '';
+          const fp = (state.datepickers || {})['fundusDateInput'];
+          if (fp) fp.clear();
+        }
+      });
+    }
+    if (el('fundusDateInput')) {
+      el('fundusDateInput').addEventListener('click', function () {
+        const fp = (state.datepickers || {})['fundusDateInput'];
+        if (fp) fp.open();
+      });
+    }
+    if (el('btnFundusRefresh')) {
+      el('btnFundusRefresh').addEventListener('click', function () {
+        const btn = el('btnFundusRefresh');
+        setBtnLoading(btn, 'กำลังรีเฟรช...');
+        hideFundusRecordForm();
+        if (state.fundusTable && typeof state.fundusTable.search === 'function') {
+          try {
+            state.fundusTable.search('').columns().search('').draw();
+          } catch (e) {}
+        }
+        fetchFundusDates().then(function () {
+          const data = state.fundusDates || [];
+          const noSel = el('fundusNoSelected');
+          const area = el('fundusDataArea');
+          if (state.selectedFundusDateId) {
+            const exists = data.some(function (d) { return d.id === state.selectedFundusDateId; });
+            if (exists) {
+              loadFundusRecordsFor(state.selectedFundusDateId);
+            } else {
+              state.selectedFundusDateId = null;
+              state.selectedFundusDate = null;
+              if (noSel && data.length) noSel.classList.remove('d-none');
+              if (area) area.classList.add('d-none');
+              if (noSel && !data.length) noSel.classList.add('d-none');
+            }
+          }
+        }).finally(function () {
+          resetBtn(btn);
+          toast('รีเฟรชรายการตรวจตาสำเร็จ', 'success', 1500);
+        });
+      });
+    }
+    if (el('fundusDateForm')) {
+      el('fundusDateForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+        submitFundusDate(e);
+      });
+    }
+    if (el('btnFundusToggleForm')) {
+      el('btnFundusToggleForm').addEventListener('click', function () {
+        const card = el('fundusFormCard');
+        if (!card) return;
+        if (card.classList.contains('d-none')) {
+          showFundusRecordForm();
+        } else {
+          hideFundusRecordForm();
+        }
+      });
+    }
+    if (el('btnFundusAddPerson')) {
+      el('btnFundusAddPerson').addEventListener('click', function () {
+        if (!state.selectedFundusDateId) {
+          toast('กรุณาเลือกวันที่ตรวจจากรายการด้านซ้ายก่อน', 'warning', 2000);
+          return;
+        }
+        state.fundusIsEditing = false;
+        clearFundusRecordSelection_();
+        resetFundusRecordForm_();
+        setFundusFormEditingState_(false);
+        showFundusRecordForm();
+
+        const hn = el('ff_hn');
+        if (hn) {
+          hn.removeAttribute('readonly');
+          hn.focus();
+        }
+
+      });
+    }
+    if (el('fundusClearSelection')) {
+      el('fundusClearSelection').addEventListener('click', function () {
+        state.fundusIsEditing = false;
+        clearFundusRecordSelection_();
+        resetFundusRecordForm_();
+        setFundusFormEditingState_(false);
+        renderFundusRecords();
+        setTimeout(function () {
+          const hn = el('ff_hn');
+          if (hn) hn.focus();
+        }, 50);
+      });
+    }
+    if (el('btnFundusFormCancel')) {
+      el('btnFundusFormCancel').addEventListener('click', function () {
+        hideFundusRecordForm();
+      });
+    }
+    if (el('fundusRecordForm')) {
+      el('fundusRecordForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+        submitFundusRecord(e);
+      });
+      el('fundusRecordForm').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          return false;
+        }
+      });
+    }
+    if (el('btnFundusHNLookup')) {
+      el('btnFundusHNLookup').addEventListener('click', fundusHNLookupClick_);
+    }
+    if (el('ff_hn')) {
+      el('ff_hn').addEventListener('blur', function () {
+        const hnVal = String(el('ff_hn').value || '').trim();
+        if (!hnVal) return;
+        if (state.fundusIsEditing) return;
+
+        // ตรวจสอบข้อมูลซ้ำเบื้องต้นในฝั่ง Client
+        const isDupe = (state.fundusRecords || []).some(function (r) {
+          return String(r.hn || '').trim() === hnVal;
+        });
+        if (isDupe) {
+          resetFundusRecordForm_();
+          Swal.fire({
+            icon: 'warning',
+            title: 'พบข้อมูลซ้ำ',
+            text: 'HN ' + formatHN(hnVal) + ' มีข้อมูลการตรวจในวันที่เลือกนี้อยู่แล้ว',
+            confirmButtonColor: '#2859a8',
+            confirmButtonText: 'ตกลง'
+          });
+          const hnInp = el('ff_hn');
+          if (hnInp) hnInp.focus();
+          return;
+        }
+
+        const user = getCurrentUser();
+        if (!user) { handleNeedLogin(); return; }
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (!res || !res.success || !res.data) {
+              const typedHN = hnVal;
+              resetFundusRecordForm_();
+              const hnInp = el('ff_hn');
+              if (hnInp) hnInp.value = typedHN;
+              return;
+            }
+            const p = res.data;
+            const prefixSel = el('ff_prefix');
+            const firstInp = el('ff_firstName');
+            const lastInp = el('ff_lastName');
+            if (prefixSel) {
+              prefixSel.value = p.prefix || '';
+              prefixSel.setAttribute('readonly', 'readonly');
+              prefixSel.setAttribute('disabled', 'disabled');
+            }
+            if (firstInp) {
+              firstInp.value = p.firstName || '';
+              firstInp.setAttribute('readonly', 'readonly');
+              firstInp.setAttribute('required', 'required');
+            }
+            if (lastInp) {
+              lastInp.value = p.lastName || '';
+              lastInp.setAttribute('readonly', 'readonly');
+              lastInp.setAttribute('required', 'required');
+            }
+          })
+          .withFailureHandler(function () {})
+          .getPersonByHN(hnVal, user);
+      });
+    }
+
+  }
+  NCDApp.registerModule('fundus', {
+    initPage: initFundusPage,
+    resetPage: resetFundusPage_,
+    initEvents: initFundusEvents_
+  });
+})(window.NCDApp);
+
+</script>

@@ -1,0 +1,210 @@
+<style>
+  /* ---------- Lab UI ---------- */
+  .lab-primary {
+    color: #2859a8 !important;
+  }
+
+  .lab-primary-bg {
+    background-color: #2859a8 !important;
+  }
+
+  .lab-primary-light {
+    background-color: #eef2f9 !important;
+  }
+
+  .btn-lab-custom {
+    background-color: #2859a8;
+    border: none;
+  }
+
+  .btn-lab-custom:hover {
+    background-color: #1e4483;
+  }
+
+  .minimal-card {
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    background: #fff;
+  }
+
+  .calendar-header {
+    background-color: #2859a8;
+    color: white;
+    border-radius: 8px 8px 0 0;
+    padding: 6px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .calendar-header-text {
+    font-size: 0.85rem;
+  }
+
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    padding: 8px;
+  }
+
+  .calendar-day-header {
+    text-align: center;
+    font-weight: 600;
+    color: #333333;
+    font-size: 0.7rem;
+    padding-bottom: 2px;
+  }
+
+  .calendar-day {
+    aspect-ratio: 1;
+    border: 1px solid #eee;
+    border-radius: 3px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    min-height: 35px;
+  }
+
+  .calendar-day:hover {
+    background-color: #eef2f9;
+    border-color: #2859a8;
+  }
+
+  .calendar-day.has-data {
+    background-color: #eef2f9;
+    border-color: #c0d3ef;
+  }
+
+  .calendar-day.active {
+    background-color: #2859a8;
+    color: white;
+  }
+
+  .calendar-day.calendar-today {
+    border: 1px solid #2859a8;
+  }
+
+  .day-number {
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+
+  .patient-count {
+    font-size: 0.6rem;
+    background: #2859a8;
+    color: white;
+    padding: 1px 4px;
+    border-radius: 8px;
+    margin-top: 2px;
+  }
+
+  .calendar-day.active .patient-count {
+    background: white;
+    color: #2859a8;
+  }
+
+  .upload-area-compact {
+    border: 2px dashed #ccc;
+    border-radius: 8px;
+    padding: 30px 20px;
+    background-color: #fafafa;
+    transition: all 0.3s;
+    text-align: center;
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .upload-area-compact:hover,
+  .upload-area-compact.drag-over {
+    border-color: #2859a8;
+    background-color: #eef2f9;
+  }
+
+  .upload-icon {
+    font-size: 3rem;
+    color: #999;
+    margin-bottom: 15px;
+  }
+
+  .upload-text {
+    margin-bottom: 20px;
+  }
+
+  .upload-main-text {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #333;
+    margin-bottom: 5px;
+  }
+
+  .upload-sub-text {
+    font-size: 0.85rem;
+    color: #666;
+    margin: 0;
+  }
+
+  .upload-btn {
+    background-color: white;
+    border-color: #2859a8;
+    color: #2859a8;
+    font-weight: 500;
+  }
+
+  .upload-btn:hover {
+    background-color: #2859a8;
+    color: white;
+  }
+
+  .selected-file-info {
+    display: flex;
+    align-items: center;
+    margin-top: 15px;
+    padding: 10px 15px;
+    background-color: #e8f4fd;
+    border-radius: 6px;
+    border: 1px solid #b8daff;
+  }
+
+  .table-minimal th {
+    background-color: #eef2f9 !important;
+    color: #2859a8 !important;
+    font-weight: 600;
+    border-bottom: 2px solid #2859a8 !important;
+  }
+
+  /* DataTables Styling Adjustments */
+  .dataTables_wrapper .dataTables_length select,
+  .dataTables_wrapper .dataTables_filter input {
+    border-radius: 6px;
+    border: 1px solid #ced4da;
+    padding: 4px 8px;
+  }
+
+  .dataTables_wrapper .dataTables_filter input:focus,
+  .dataTables_wrapper .dataTables_length select:focus {
+    border-color: #2859a8;
+    box-shadow: 0 0 0 0.2rem rgba(40, 89, 168, 0.25);
+    outline: none;
+  }
+
+  .dataTables_wrapper .pagination .page-item.active .page-link {
+    background-color: #2859a8;
+    border-color: #2859a8;
+    color: #fff;
+  }
+
+  .dataTables_wrapper .pagination .page-link {
+    color: #2859a8;
+  }
+
+  
+</style>

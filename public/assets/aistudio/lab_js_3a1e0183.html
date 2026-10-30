@@ -1,0 +1,600 @@
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+
+  let labNormalsData = {};
+  let labInitialized = false;
+
+  const thMonths = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+
+  let currentDate = new Date();
+  let currentMonth = currentDate.getMonth();
+  let currentYearCE = currentDate.getFullYear();
+  let calendarData = {};
+  let dataTableInstance = null;
+  let selectedDateStr = null; // เก็บวันที่ที่เลือกไว้สำหรับปุ่มลบทั้งหมด
+  let pendingUploadData = null; // เก็บข้อมูลที่อัปโหลดไว้สำหรับการบันทึก
+
+  function renderCalendar() {
+    const monthYearText = document.getElementById("calendarMonthYearText");
+    monthYearText.textContent = `${thMonths[currentMonth]} ${currentYearCE + 543}`;
+    
+    const grid = document.getElementById("calendarGrid");
+    grid.innerHTML = "";
+    
+    const days = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+    days.forEach(d => {
+      let div = document.createElement("div");
+      div.className = "calendar-day-header";
+      div.textContent = d;
+      grid.appendChild(div);
+    });
+
+    let firstDay = new Date(currentYearCE, currentMonth, 1).getDay();
+    let daysInMonth = new Date(currentYearCE, currentMonth + 1, 0).getDate();
+
+    for (let i = 0; i < firstDay; i++) {
+      grid.appendChild(document.createElement("div"));
+    }
+
+    let serviceDaysCount = 0;
+    let totalPatients = 0;
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      let cell = document.createElement("div");
+      cell.className = "calendar-day";
+
+      let dStr = String(day).padStart(2, '0') + "/" + String(currentMonth + 1).padStart(2, '0') + "/" + (currentYearCE + 543);
+
+      // เช็คว่าเป็นวันนี้หรือไม่
+      let today = new Date();
+      let isToday = (day === today.getDate() &&
+                    currentMonth === today.getMonth() &&
+                    currentYearCE === today.getFullYear());
+
+      if (isToday) {
+        cell.classList.add("calendar-today");
+      }
+
+      let dayNum = document.createElement("span");
+      dayNum.className = "day-number";
+      dayNum.textContent = day;
+      cell.appendChild(dayNum);
+
+      if (calendarData[dStr]) {
+        cell.classList.add("has-data");
+        let badge = document.createElement("span");
+        badge.className = "patient-count";
+        badge.textContent = calendarData[dStr] + " คน";
+        cell.appendChild(badge);
+
+        serviceDaysCount++;
+        totalPatients += calendarData[dStr];
+      }
+
+      cell.onclick = () => loadDataForDate(dStr, cell);
+      grid.appendChild(cell);
+    }
+
+    document.getElementById("totalServiceDays").textContent = serviceDaysCount;
+    document.getElementById("totalPatientsMonth").textContent = totalPatients;
+  }
+
+  function fetchCalendarData() {
+    Swal.fire({ title: 'กำลังโหลดปฏิทิน...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    
+    google.script.run.withSuccessHandler((res) => {
+      Swal.close();
+      if(res.success) { 
+        calendarData = res.stats || {}; 
+        renderCalendar(); 
+      } else {
+        Swal.fire('ข้อผิดพลาด', res.message, 'error');
+      }
+    }).withFailureHandler((err) => {
+      Swal.close();
+      Swal.fire('Error', err.message, 'error');
+    }).getBloodTestCalendarStats(currentMonth, currentYearCE);
+  }
+
+  function initLabPage() {
+    // Reset เมื่อเข้าหน้า lab
+    resetLabPage();
+
+    // Load lab normal values
+    google.script.run.withSuccessHandler((res) => {
+      if (res.success) {
+        labNormalsData = res.normals || {};
+      }
+    }).getLabNormalValues();
+
+    fetchCalendarData();
+  }
+
+  document.getElementById("btnPrevMonth").addEventListener("click", () => {
+    currentMonth--;
+    if (currentMonth < 0) { currentMonth = 11; currentYearCE--; }
+    fetchCalendarData();
+  });
+
+  document.getElementById("btnNextMonth").addEventListener("click", () => {
+    currentMonth++;
+    if (currentMonth > 11) { currentMonth = 0; currentYearCE++; }
+    fetchCalendarData();
+  });
+
+  // Refresh button
+  document.getElementById("btnLabRefresh").addEventListener("click", () => {
+    fetchCalendarData();
+    if (selectedDateStr) {
+      loadDataForDate(selectedDateStr, document.querySelector('.calendar-day.active'));
+    }
+  });
+
+  // Delete all by date button
+  document.getElementById("btnDeleteAllByDate").addEventListener("click", () => {
+    if (!selectedDateStr) {
+      Swal.fire('แจ้งเตือน', 'กรุณาเลือกวันที่ก่อน', 'warning');
+      return;
+    }
+
+    Swal.fire({
+      title: 'ยืนยันการลบข้อมูล?',
+      html: `คุณต้องการลบข้อมูลผลการตรวจเลือดทั้งหมดของวันที่ <b>${selectedDateStr}</b> ใช่หรือไม่?<br><br><span class="text-danger">การกระทำนี้ไม่สามารถย้อนกลับได้</span>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'ใช่, ลบทั้งหมด',
+      cancelButtonText: 'ยกเลิก'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        deleteAllByDate(selectedDateStr);
+      }
+    });
+  });
+
+  // Print OPD All button
+  document.getElementById("btnPrintOPDAll").addEventListener("click", () => {
+    if (!selectedDateStr) {
+      Swal.fire('แจ้งเตือน', 'กรุณาเลือกวันที่ก่อน', 'warning');
+      return;
+    }
+
+    Swal.fire({ title: 'กำลังพิมพ์ OPD Card...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    google.script.run.withSuccessHandler((res) => {
+      Swal.close();
+      if(res.success) {
+        // Open print window with setTimeout to prevent blocking
+        setTimeout(() => {
+          const printWindow = window.open('', '_blank');
+          if (printWindow) {
+            printWindow.document.write(res.html);
+            printWindow.document.close();
+            printWindow.onload = function() {
+              printWindow.print();
+            };
+          } else {
+            Swal.fire('แจ้งเตือน', 'กรุณาอนุญาตให้เปิด popup ใน browser', 'warning');
+          }
+        }, 100);
+      } else {
+        Swal.fire('ข้อผิดพลาด', res.message, 'error');
+      }
+    }).withFailureHandler((err) => {
+      Swal.close();
+      Swal.fire('Error', err.message, 'error');
+    }).generateOPDCards(selectedDateStr);
+  });
+
+  // Expose initialization function
+  window.NCDApp = window.NCDApp || {};
+  window.NCDApp.lab = {
+    initPage: initLabPage,
+    resetPage: resetLabPage
+  };
+
+  function resetLabPage() {
+    // Reset เมื่อออกจากหน้า lab
+    selectedDateStr = null;
+    document.getElementById("btnPrintOPDAll").classList.add('d-none');
+    document.getElementById("btnDeleteAllByDate").classList.add('d-none');
+    document.getElementById("tableTitleText").innerHTML = `<i class="fa-solid fa-table me-2"></i>รายการข้อมูลตรวจเลือด`;
+    if (dataTableInstance) {
+      dataTableInstance.destroy();
+      dataTableInstance = null;
+    }
+    const tbody = document.getElementById("bloodTestTableBody");
+    if (tbody) tbody.innerHTML = '<tr><td colspan="18" class="text-center text-muted py-4">กรุณาเลือกวันที่จากปฏิทิน หรืออัปโหลดไฟล์เพื่อดูข้อมูล</td></tr>';
+  } 
+
+  function loadDataForDate(dateStr, cellElement) {
+    document.querySelectorAll('.calendar-day').forEach(el => el.classList.remove('active'));
+    cellElement.classList.add('active');
+    selectedDateStr = dateStr; // เก็บวันที่ที่เลือก
+    document.getElementById("tableTitleText").innerHTML = `<i class="fa-solid fa-table me-2"></i>ข้อมูลประจำวันที่ : <span class="text-primary-custom">${dateStr}</span>`;
+
+    // แสดงปุ่ม Print OPD และลบทั้งหมด
+    document.getElementById("btnPrintOPDAll").classList.remove('d-none');
+    document.getElementById("btnDeleteAllByDate").classList.remove('d-none');
+
+    Swal.fire({ title: 'กำลังโหลดรายชื่อ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    google.script.run.withSuccessHandler((res) => {
+      Swal.close();
+      if(res.success) {
+        renderTable(res.records);
+      } else {
+        Swal.fire('ข้อผิดพลาด', 'ไม่สามารถโหลดรายชื่อได้', 'error');
+      }
+    }).withFailureHandler((err) => {
+      Swal.close();
+      Swal.fire('Error', err.message, 'error');
+    }).getBloodTestRecordsByDate(dateStr);
+  }
+
+  function deleteAllByDate(dateStr) {
+    Swal.fire({ title: 'กำลังลบข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    google.script.run.withSuccessHandler((res) => {
+      Swal.close();
+      if(res.success) {
+        Swal.fire('สำเร็จ', `ลบข้อมูลเรียบร้อย ${res.deletedCount} รายการ`, 'success');
+        fetchCalendarData();
+        // โหลดข้อมูลใหม่หลังลบ
+        loadDataForDate(dateStr, document.querySelector('.calendar-day.active'));
+      } else {
+        Swal.fire('เกิดข้อผิดพลาด', res.message, 'error');
+      }
+    }).withFailureHandler((err) => {
+      Swal.close();
+      Swal.fire('Error', err.message, 'error');
+    }).deleteBloodTestByDate(dateStr);
+  }
+
+  // --- Excel Upload & Processing ---
+  document.getElementById("btnProcessExcel").addEventListener("click", function() {
+    const fileInput = document.getElementById("excelFileInput");
+    if (!fileInput.files.length) {
+      Swal.fire('แจ้งเตือน', 'กรุณาเลือกไฟล์ Excel ก่อน', 'warning');
+      return;
+    }
+
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+
+    Swal.fire({ title: 'กำลังอ่านไฟล์ Excel...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+        
+        let processedData = [];
+        for (let i = 1; i < jsonData.length; i++) {
+          let row = jsonData[i];
+          if (!row || row.length === 0 || !row[2]) continue; 
+
+          let dateStr = row[11] ? String(row[11]).trim() : "";
+          let hnStr = row[2] ? String(row[2]).trim() : "";
+          
+          let id = "";
+          if (dateStr) {
+            let p = dateStr.split("/");
+            if(p.length === 3) id = p[2] + p[1] + p[0] + "-" + hnStr;
+            else id = dateStr + "-" + hnStr;
+          } else {
+            id = "NODATE-" + hnStr;
+          }
+
+          let mappedRow = [
+            id, "", hnStr, row[3] || "", row[4] || "", row[5] || "",
+            row[6] || "", row[7] || "", row[8] || "", row[9] || "", row[10] || "",
+            dateStr, row[12] || "", row[13] || "", row[14] || "", row[15] || "",
+            row[16] || "", row[17] || "", row[18] || "", row[19] || ""
+          ];
+          processedData.push(mappedRow);
+        }
+
+        if(processedData.length === 0) {
+          Swal.fire('เกิดข้อผิดพลาด', 'ไม่พบข้อมูลในไฟล์ Excel', 'error');
+          return;
+        }
+
+        google.script.run.withSuccessHandler((res) => {
+          Swal.close();
+          if(!res.success) { Swal.fire('Error', res.message, 'error'); return; }
+
+          let htmlMsg = `รายการทั้งหมด: <b>${res.total}</b> รายการ<br>` +
+                        `พบข้อมูลซ้ำเดิม: <b class="text-danger">${res.duplicates}</b> รายการ<br>` +
+                        `ข้อมูลใหม่พร้อมบันทึก: <b class="text-success">${res.newRecords}</b> รายการ`;
+
+          if(res.newRecords === 0) {
+            Swal.fire('ข้อมูลซ้ำทั้งหมด', htmlMsg, 'info');
+            return;
+          }
+
+          // แสดงตัวเลือกวิธีบันทึก
+          Swal.fire({
+            title: 'เลือกวิธีบันทึกข้อมูล',
+            html: htmlMsg,
+            icon: 'question',
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonColor: '#2859a8',
+            denyButtonColor: '#10b981',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'เพิ่มเฉพาะรายใหม่',
+            denyButtonText: 'เพิ่มใหม่ + ปรับปรุงรายชื่อซ้ำ',
+            cancelButtonText: 'ยกเลิก'
+          }).then((result) => {
+            if (result.isConfirmed) {
+              // เพิ่มเฉพาะรายใหม่
+              saveToServer(res.readyToSave, false);
+            } else if (result.isDenied) {
+              // เพิ่มใหม่ + ปรับปรุงรายชื่อซ้ำ
+              saveToServer(res.readyToSave, true);
+            }
+          });
+        }).uploadBloodTestExcel(processedData);
+
+      } catch (err) {
+        Swal.fire('เกิดข้อผิดพลาด', 'อ่านไฟล์ไม่สำเร็จ: ' + err.message, 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  function saveToServer(newData, updateExisting) {
+    Swal.fire({ title: 'กำลังบันทึกข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    google.script.run.withSuccessHandler((res) => {
+      Swal.close();
+      if(res.success) {
+        Swal.fire('สำเร็จ', `บันทึกข้อมูลเรียบร้อย ${res.savedCount} รายการ`, 'success');
+        document.getElementById("excelFileInput").value = "";
+        clearSelectedFile();
+        fetchCalendarData();
+      } else {
+        Swal.fire('เกิดข้อผิดพลาด', res.message, 'error');
+      }
+    }).confirmSaveBloodTest(newData, updateExisting);
+  }
+
+  // --- Show All Blood Tests ---
+  window.showAllBloodTests = function() {
+    Swal.fire({ title: 'กำลังโหลดข้อมูลตรวจเลือดทั้งหมด...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    
+    google.script.run.withSuccessHandler((res) => {
+      Swal.close();
+      if(res.success) { 
+        document.getElementById("tableTitleText").innerHTML = `<i class="fa-solid fa-table me-2"></i>รายการข้อมูลตรวจเลือดทั้งหมด`;
+        renderTable(res.records); 
+      } else {
+        Swal.fire('ข้อผิดพลาด', 'ไม่สามารถโหลดข้อมูลได้', 'error');
+      }
+    }).withFailureHandler((err) => {
+      Swal.close();
+      Swal.fire('Error', err.message, 'error');
+    }).getAllBloodTestRecords();
+  };
+
+  // --- Render Table using DataTables ---
+  function renderTable(records) {
+    // ถ้าเคย Init DataTables ไว้แล้ว ให้ Destroy ทิ้งเพื่อ Reset ข้อมูลใหม่
+    if (dataTableInstance) {
+      dataTableInstance.destroy();
+      dataTableInstance = null;
+    }
+
+    const tbody = document.getElementById("bloodTestTableBody");
+    tbody.innerHTML = "";
+
+    if (records && records.length > 0) {
+      records.forEach((r, index) => {
+        let tr = document.createElement("tr");
+        let bp = (r.bpTop || r.bpBottom) ? `${r.bpTop || '-'}/${r.bpBottom || '-'}` : '-';
+
+        tr.innerHTML = `
+          <td class="text-muted small">${r.id || '-'}</td>
+          <td>${r.name || '-'}</td>
+          <td>${r.hn || '-'}</td>
+          <td>${r.serviceUnit || '-'}</td>
+          <td>${renderLabValueWithBadge(r.fbs, 'FBS')}</td>
+          <td>${renderLabValueWithBadge(r.hba1c, 'HBA1C')}</td>
+          <td>${renderLabValueWithBadge(r.bun, 'BUN')}</td>
+          <td>${renderLabValueWithBadge(r.cr, 'CR')}</td>
+          <td>${renderLabValueWithBadge(r.tc, 'TC')}</td>
+          <td>${renderLabValueWithBadge(r.tg, 'TG')}</td>
+          <td>${renderLabValueWithBadge(r.hdl, 'HDL')}</td>
+          <td>${renderLabValueWithBadge(r.ldl, 'LDL')}</td>
+          <td>${r.serviceDate || '-'}</td>
+          <td>${bp}</td>
+          <td>${r.weight || '-'}</td>
+          <td>${r.height || '-'}</td>
+          <td>${renderLabValueWithBadge(r.egfr, 'EGFR')}</td>
+          <td class="text-center">
+            <button type="button" class="btn btn-outline-danger btn-sm btn-lab-delete" data-id="${r.id || ''}" data-index="${index}">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Initialize DataTable
+    dataTableInstance = $('#bloodTestTable').DataTable({
+      pageLength: 10,
+      lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "ทั้งหมด"]],
+      order: [],
+      columnDefs: [
+        { orderable: false, targets: -1 } // ทำให้คอลัมน์สุดท้าย (จัดการ) ไม่สามารถ sort ได้
+      ],
+      language: {
+        lengthMenu: "แสดง _MENU_ รายการ",
+        search: "ค้นหา:",
+        searchPlaceholder: "พิมพ์ชื่อ, HN หรือ ID...",
+        info: "แสดง _START_ ถึง _END_ จาก _TOTAL_ รายการ",
+        infoEmpty: "แสดง 0 ถึง 0 จาก 0 รายการ",
+        infoFiltered: "(กรองจากทั้งหมด _MAX_ รายการ)",
+        zeroRecords: "ไม่พบข้อมูลที่ตรงกัน",
+        paginate: {
+          first: "หน้าแรก",
+          last: "หน้าสุดท้าย",
+          next: "ถัดไป",
+          previous: "ย้อนกลับ"
+        }
+      }
+    });
+
+    // Add event listeners for delete buttons
+    document.querySelectorAll('.btn-lab-delete').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const id = this.getAttribute('data-id');
+        if (id) {
+          deleteLabRecord(id);
+        }
+      });
+    });
+  }
+
+  function deleteLabRecord(id) {
+    Swal.fire({
+      title: 'ยืนยันการลบรายการ?',
+      html: `คุณต้องการลบรายการผลการตรวจเลือด ID: <b>${id}</b> ใช่หรือไม่?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'ใช่, ลบ',
+      cancelButtonText: 'ยกเลิก'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        Swal.fire({ title: 'กำลังลบข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+        google.script.run.withSuccessHandler((res) => {
+          Swal.close();
+          if(res.success) {
+            Swal.fire('สำเร็จ', 'ลบรายการเรียบร้อย', 'success');
+            // โหลดข้อมูลใหม่
+            if (selectedDateStr) {
+              loadDataForDate(selectedDateStr, document.querySelector('.calendar-day.active'));
+            } else {
+              showAllBloodTests();
+            }
+          } else {
+            Swal.fire('เกิดข้อผิดพลาด', res.message, 'error');
+          }
+        }).withFailureHandler((err) => {
+          Swal.close();
+          Swal.fire('Error', err.message, 'error');
+        }).deleteBloodTestById(id);
+      }
+    });
+  }
+
+
+  // ฟังก์ชันใช้สำหรับแปลงค่าและใส่ Badge ตอนสร้างตาราง
+  function renderLabValueWithBadge(value, labName) {
+    if (!value || isNaN(value)) return value; // ถ้าไม่มีค่าหรือไม่ใช่ตัวเลข ให้พิมพ์ปกติ
+    
+    const numVal = parseFloat(value);
+    const labKey = String(labName).toUpperCase();
+    const normalInfo = labNormalsData[labKey];
+    
+    if (!normalInfo) return value; // ถ้าไม่มีเกณฑ์ใน c_lab ให้พิมพ์ปกติ
+    
+    // มากกว่า Max -> แดง
+    if (normalInfo.max !== null && numVal > normalInfo.max) {
+      return `<span class="badge bg-danger">${value}</span>`;
+    } 
+    // น้อยกว่า Min -> เหลือง
+    else if (normalInfo.min !== null && numVal < normalInfo.min) {
+      return `<span class="badge bg-warning text-dark">${value}</span>`;
+    } 
+    // ปกติ -> ไม่มี badge
+    else {
+      return value;
+    }
+  }
+
+
+
+});
+</script>
+
+
+
+
+<script>
+function handleLabFileSelect(event) {
+  const file = event.target.files[0];
+  if (file) {
+    document.getElementById('labFileName').textContent = file.name;
+    document.getElementById('selectedFileInfo').classList.remove('d-none');
+    document.getElementById('uploadArea').querySelector('.upload-icon').classList.add('d-none');
+    document.getElementById('uploadArea').querySelector('.upload-text').classList.add('d-none');
+    document.getElementById('uploadArea').querySelector('.upload-btn').classList.add('d-none');
+  }
+}
+
+function clearSelectedFile() {
+  document.getElementById('excelFileInput').value = '';
+  document.getElementById('labFileName').textContent = '';
+  document.getElementById('selectedFileInfo').classList.add('d-none');
+  document.getElementById('uploadArea').querySelector('.upload-icon').classList.remove('d-none');
+  document.getElementById('uploadArea').querySelector('.upload-text').classList.remove('d-none');
+  document.getElementById('uploadArea').querySelector('.upload-btn').classList.remove('d-none');
+}
+
+// Drag and drop functionality
+document.addEventListener('DOMContentLoaded', function() {
+  const uploadArea = document.getElementById('uploadArea');
+  const fileInput = document.getElementById('excelFileInput');
+
+  if (uploadArea) {
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      uploadArea.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    // Highlight drop area when item is dragged over it
+    ['dragenter', 'dragover'].forEach(eventName => {
+      uploadArea.addEventListener(eventName, highlight, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      uploadArea.addEventListener(eventName, unhighlight, false);
+    });
+
+    function highlight(e) {
+      uploadArea.classList.add('drag-over');
+    }
+
+    function unhighlight(e) {
+      uploadArea.classList.remove('drag-over');
+    }
+
+    // Handle dropped files
+    uploadArea.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(e) {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+
+      if (files.length > 0) {
+        fileInput.files = files;
+        handleLabFileSelect({ target: fileInput });
+      }
+    }
+  }
+});
+</script>

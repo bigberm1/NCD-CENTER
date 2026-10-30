@@ -1,0 +1,87 @@
+<style>
+  .patient-table {
+    font-size: .88rem
+  }
+
+  .patient-table th {
+    white-space: nowrap;
+    font-weight: 600;
+    color: #596678;
+    background: #f7faf8 !important
+  }
+
+  .patient-table td {
+    white-space: nowrap
+  }
+
+  .table-loading {
+    padding: 18px;
+    text-align: center;
+    color: var(--app-muted)
+  }
+
+  .patient-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap
+  }
+
+  .patient-pagination-info {
+    font-size: .8rem;
+    color: var(--app-muted)
+  }
+
+  .patient-pagination-buttons {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap
+  }
+
+  .patient-page-btn {
+    min-width: 34px
+  }
+
+  .patient-filter-bar {
+    background: #fbfdfc
+  }
+
+  .filter-label {
+    font-size: .8rem;
+    color: var(--app-muted);
+    font-weight: 600
+  }
+
+  .disease-filter {
+    border: 1px solid #dbe5df;
+    background: #fff;
+    color: var(--app-gray);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: .82rem
+  }
+
+  .disease-filter.active[data-disease="ht"] {
+    background: var(--app-blue-soft);
+    border-color: #b9e5fb;
+    color: #357895
+  }
+
+  .disease-filter.active[data-disease="dm"] {
+    background: var(--app-orange-soft);
+    border-color: #ffd0be;
+    color: #a7654c
+  }
+
+  .disease-filter.active[data-disease="dlp"] {
+    background: var(--app-purple-soft);
+    border-color: #d8c2f7;
+    color: #7655a4
+  }
+
+  .filter-clear {
+    font-size: .78rem;
+    color: var(--app-muted)
+  }
+</style>

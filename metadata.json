@@ -1,0 +1,7 @@
+{
+  "name": "NCD Center - โฮงยาไทย",
+  "description": "ระบบบริหารจัดการคลินิกโรคไม่ติดต่อเรื้อรัง (NCD Center) บันทึกข้อมูลผู้ป่วย ตรวจตา ตรวจเลือด TeleMed และสถิติสุขภาพ พร้อมระบบเชื่อมต่อ Supabase",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

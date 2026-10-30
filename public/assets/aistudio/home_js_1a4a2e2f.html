@@ -1,0 +1,521 @@
+<script>
+
+  (function (NCDApp) {
+  'use strict';
+
+  const el = NCDApp.el || function(id) { return document.getElementById(id); };
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  /* ---------- Dashboard (หน้าหลัก) ---------- */
+
+  let dashboardData = null;
+  let patientsChart = null;
+  let fundusChart = null;
+  let fundusFilteredData = null;
+
+  function initDashboardTabs() {
+    const tabs = document.querySelectorAll('.dashboard-tab');
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        const tabName = tab.getAttribute('data-tab');
+        switchDashboardTab(tabName);
+      });
+    });
+  }
+
+  function switchDashboardTab(tabName) {
+    // Update tab buttons
+    document.querySelectorAll('.dashboard-tab').forEach(function (tab) {
+      if (tab.getAttribute('data-tab') === tabName) {
+        tab.classList.remove('btn-outline-secondary');
+        tab.classList.add('btn-primary', 'active');
+      } else {
+        tab.classList.remove('btn-primary', 'active');
+        tab.classList.add('btn-outline-secondary');
+      }
+    });
+
+    // Update content
+    document.querySelectorAll('.dashboard-tab-content').forEach(function (content) {
+      content.classList.add('d-none');
+    });
+    const targetContent = el('tab-' + tabName);
+    if (targetContent) {
+      targetContent.classList.remove('d-none');
+    }
+
+    // Load data fresh every time a tab is clicked
+    loadDashboardData();
+  }
+
+  function loadDashboardData() {
+    const loader1 = el('patientsByServiceLoader');
+    const loader2 = el('fundusByServiceLoader');
+    const content1 = el('patientsByServiceContent');
+    const content2 = el('fundusByServiceContent');
+    if (loader1) loader1.classList.remove('d-none');
+    if (loader2) loader2.classList.remove('d-none');
+    if (content1) content1.classList.add('d-none');
+    if (content2) content2.classList.add('d-none');
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (loader1) loader1.classList.add('d-none');
+        if (loader2) loader2.classList.add('d-none');
+        if (!res) {
+          if (content1) content1.classList.add('d-none');
+          if (content2) content2.classList.add('d-none');
+          return;
+        }
+        if (!res.success) {
+          alert(res.message || 'ไม่สามารถโหลดข้อมูลได้');
+          if (content1) content1.classList.add('d-none');
+          if (content2) content2.classList.add('d-none');
+          return;
+        }
+        dashboardData = {
+          patientsData: res.patientsData || [],
+          fundusData: res.fundusData || []
+        };
+
+        // Initialize fundus filters
+        initFundusFilters(dashboardData.fundusData);
+
+        // Determine which tab is currently active
+        const activeTab = document.querySelector('.dashboard-tab.active');
+        const tabName = activeTab ? activeTab.getAttribute('data-tab') : 'patientsByService';
+
+        // Render based on active tab
+        if (tabName === 'patientsByService') {
+          if (content1) content1.classList.remove('d-none');
+          renderPatientsByServiceChart(dashboardData.patientsData);
+        } else if (tabName === 'fundusByService') {
+          if (content2) content2.classList.remove('d-none');
+          fundusFilteredData = dashboardData.fundusData;
+          renderFundusDashboard(fundusFilteredData);
+        }
+      })
+      .withFailureHandler(function (err) {
+        if (loader1) loader1.classList.add('d-none');
+        if (loader2) loader2.classList.add('d-none');
+        alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่');
+        if (content1) content1.classList.add('d-none');
+        if (content2) content2.classList.add('d-none');
+      })
+      .getDashboardData();
+  }
+
+  function renderPatientsByServiceChart(data) {
+    const canvas = el('patientsByServiceChart');
+    if (!canvas) return;
+
+    // Destroy existing chart if it exists
+    if (patientsChart) {
+      patientsChart.destroy();
+    }
+
+    if (!data || data.length === 0) {
+      // Show no data message
+      const parent = canvas.parentElement;
+      parent.innerHTML = '<div class="text-center text-muted py-5">ยังไม่มีข้อมูล</div>';
+      return;
+    }
+
+    // Prepare data
+    const labels = data.map(function(row) { return row.serviceName || '-'; });
+    const counts = data.map(function(row) { return row.count || 0; });
+
+    // Register datalabels plugin
+    Chart.register(ChartDataLabels);
+
+    // Create chart
+    const ctx = canvas.getContext('2d');
+    patientsChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'จำนวนผู้ป่วย',
+          data: counts,
+          backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          },
+          tooltip: {
+            enabled: true,
+            titleFont: {
+              family: 'Sarabun'
+            },
+            bodyFont: {
+              family: 'Sarabun'
+            }
+          },
+          datalabels: {
+            anchor: 'end',
+            align: 'end',
+            offset: -2,
+            color: '#333',
+            font: {
+              family: 'Sarabun',
+              weight: 'bold',
+              size: 12
+            },
+            formatter: function(value) {
+              return value;
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              precision: 0,
+              font: {
+                family: 'Sarabun'
+              }
+            }
+          },
+          x: {
+            ticks: {
+              maxRotation: 45,
+              minRotation: 45,
+              font: {
+                family: 'Sarabun'
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function getFiscalYear(dateStr) {
+    // Convert date string to fiscal year (Thai fiscal year: Oct 1 - Sep 30)
+    // Supports formats: dd/mm/yyyy or yyyy-mm-dd
+
+    if (!dateStr) return null;
+
+    let day, month, year;
+
+    // Try format: dd/mm/yyyy
+    if (dateStr.includes('/')) {
+      const parts = dateStr.split('/');
+      if (parts.length < 3) return null;
+      day = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10);
+      year = parseInt(parts[2], 10);
+    }
+    // Try format: yyyy-mm-dd
+    else if (dateStr.includes('-')) {
+      const parts = dateStr.split('-');
+      if (parts.length < 3) return null;
+      year = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10);
+      day = parseInt(parts[2], 10);
+    }
+    else {
+      return null;
+    }
+
+    if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+
+    // Thai fiscal year: Oct (10) - Sep (9)
+    // If month >= 10 (Oct), fiscal year = current year
+    // If month <= 9 (Sep), fiscal year = previous year
+    let fiscalYear;
+    if (month >= 10) {
+      fiscalYear = year;
+    } else {
+      fiscalYear = year - 1;
+    }
+
+    return fiscalYear.toString();
+  }
+
+  function initFundusFilters(data) {
+    const yearFilter = el('fundusYearFilter');
+    const locationFilter = el('fundusLocationFilter');
+
+    if (!yearFilter || !locationFilter) return;
+
+    // Get unique fiscal years from examDate
+    const fiscalYears = new Set();
+    const locations = new Set();
+
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+
+      // Check all possible date field names
+      const dateField = row.examDate || row.date || row.exam_date || row.Date;
+      if (dateField) {
+        const fiscalYear = getFiscalYear(dateField);
+        if (fiscalYear) {
+          fiscalYears.add(fiscalYear);
+        }
+      }
+
+      // Check all possible location field names
+      const locField = row.location || row.Location || row.place || row.Place;
+      if (locField) {
+        locations.add(locField);
+      }
+    }
+
+    // Populate year filter
+    yearFilter.innerHTML = '<option value="">ปีงบประมาณ</option>';
+    const sortedYears = Array.from(fiscalYears).sort().reverse(); // Newest first
+    for (let i = 0; i < sortedYears.length; i++) {
+      const option = document.createElement('option');
+      option.value = sortedYears[i];
+      option.textContent = sortedYears[i];
+      yearFilter.appendChild(option);
+    }
+
+    // Populate location filter
+    locationFilter.innerHTML = '<option value="">สถานที่</option>';
+    const sortedLocations = Array.from(locations).sort();
+    for (let i = 0; i < sortedLocations.length; i++) {
+      const option = document.createElement('option');
+      option.value = sortedLocations[i];
+      option.textContent = sortedLocations[i];
+      locationFilter.appendChild(option);
+    }
+
+    // Add event listeners
+    yearFilter.addEventListener('change', applyFundusFilters);
+    locationFilter.addEventListener('change', applyFundusFilters);
+
+    const resetBtn = el('btnResetFundusFilters');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', function() {
+        yearFilter.value = '';
+        locationFilter.value = '';
+        applyFundusFilters();
+      });
+    }
+  }
+
+  function applyFundusFilters() {
+    const yearFilter = el('fundusYearFilter');
+    const locationFilter = el('fundusLocationFilter');
+
+    const selectedYear = yearFilter ? yearFilter.value : '';
+    const selectedLocation = locationFilter ? locationFilter.value : '';
+
+    // Filter data
+    fundusFilteredData = dashboardData.fundusData.filter(function(row) {
+      let yearMatch = true;
+      let locationMatch = true;
+
+      if (selectedYear && row.examDate) {
+        const fiscalYear = getFiscalYear(row.examDate);
+        yearMatch = (fiscalYear === selectedYear);
+      }
+
+      if (selectedLocation) {
+        locationMatch = (row.location === selectedLocation);
+      }
+
+      return yearMatch && locationMatch;
+    });
+
+    renderFundusDashboard(fundusFilteredData);
+  }
+
+  function renderFundusDashboard(data) {
+    const yearFilter = el('fundusYearFilter');
+    const locationFilter = el('fundusLocationFilter');
+    const placeholder = el('fundusChartPlaceholder');
+    const canvas = el('fundusByLocationChart');
+
+    const hasYearFilter = yearFilter && yearFilter.value !== '';
+    const hasLocationFilter = locationFilter && locationFilter.value !== '';
+
+    // Only render chart if at least one filter is applied
+    if (hasYearFilter || hasLocationFilter) {
+      // Hide placeholder, show canvas
+      if (placeholder) placeholder.style.display = 'none';
+      if (canvas) canvas.style.display = 'block';
+      renderFundusByLocationChart(data);
+    } else {
+      // Show placeholder, hide canvas
+      if (placeholder) placeholder.style.display = 'block';
+      if (canvas) canvas.style.display = 'none';
+    }
+
+    // Always render table
+    renderFundusByServiceTable(data);
+  }
+
+  function renderFundusByLocationChart(data) {
+    const parent = document.querySelector('#fundusByLocationChart')?.parentElement;
+    if (!parent) return;
+
+    // Restore canvas if it was replaced with placeholder message
+    const existingCanvas = document.getElementById('fundusByLocationChart');
+    if (!existingCanvas || existingCanvas.tagName !== 'CANVAS') {
+      parent.innerHTML = '<canvas id="fundusByLocationChart"></canvas>';
+    }
+
+    const canvas = document.getElementById('fundusByLocationChart');
+    if (!canvas) return;
+
+    // Destroy existing chart if it exists
+    if (fundusChart) {
+      fundusChart.destroy();
+      fundusChart = null;
+    }
+
+    if (!data || data.length === 0) {
+      // Show no data message
+      parent.innerHTML = '<div class="text-center text-muted py-5">ยังไม่มีข้อมูล</div>';
+      return;
+    }
+
+    // Aggregate data by location
+    const locationTotals = {};
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const location = row.location || 'ไม่ระบุ';
+      const total = parseInt(row.total) || 0;
+      if (locationTotals[location]) {
+        locationTotals[location] += total;
+      } else {
+        locationTotals[location] = total;
+      }
+    }
+
+    // Convert to arrays
+    const locations = Object.keys(locationTotals);
+    const totals = Object.values(locationTotals);
+
+    // Register datalabels plugin
+    Chart.register(ChartDataLabels);
+
+    // Create chart
+    const ctx = canvas.getContext('2d');
+    fundusChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: locations,
+        datasets: [{
+          label: 'จำนวนการตรวจ',
+          data: totals,
+          backgroundColor: 'rgba(75, 192, 192, 0.6)',
+          borderColor: 'rgba(75, 192, 192, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          },
+          tooltip: {
+            enabled: true,
+            titleFont: {
+              family: 'Sarabun'
+            },
+            bodyFont: {
+              family: 'Sarabun'
+            }
+          },
+          datalabels: {
+            anchor: 'end',
+            align: 'end',
+            offset: -2,
+            color: '#333',
+            font: {
+              family: 'Sarabun',
+              weight: 'bold',
+              size: 12
+            },
+            formatter: function(value) {
+              return value;
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              precision: 0,
+              font: {
+                family: 'Sarabun'
+              }
+            }
+          },
+          x: {
+            ticks: {
+              maxRotation: 45,
+              minRotation: 45,
+              font: {
+                family: 'Sarabun'
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderFundusByServiceTable(data) {
+    const tbody = el('fundusByServiceTableBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+
+    if (!data || data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">ยังไม่มีข้อมูล</td></tr>';
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="text-center">${i + 1}</td>
+        <td class="text-center">${escapeHtml(row.examDate || '-')}</td>
+        <td>${escapeHtml(row.location || '-')}</td>
+        <td class="text-center"><strong>${escapeHtml(row.total || '0')}</strong></td>
+        <td class="text-center">${escapeHtml(row.noDR || '0')}</td>
+        <td class="text-center">${escapeHtml(row.mildNPDR || '0')}</td>
+        <td class="text-center">${escapeHtml(row.moderateNPDR || '0')}</td>
+        <td class="text-center">${escapeHtml(row.severeNPDR || '0')}</td>
+        <td class="text-center">${escapeHtml(row.pdr || '0')}</td>
+        <td class="text-center">${escapeHtml(row.poorView || '0')}</td>
+      `;
+      frag.appendChild(tr);
+    }
+    tbody.appendChild(frag);
+  }
+
+  function initHomePage() {
+    initDashboardTabs();
+    loadDashboardData();
+  }
+
+  // Expose init function
+  NCDApp.registerModule('home', {
+    initPage: initHomePage
+  });
+
+  })(window.NCDApp);
+
+</script>

@@ -1,0 +1,182 @@
+<style>
+  /* ---------- Fundus UI ---------- */
+  .fundus-date-btn {
+    border-left: 3px solid transparent !important;
+    transition: all .12s ease;
+    color: var(--text) !important;
+    background-color: var(--white) !important;
+    border-radius: 8px !important;
+    margin-bottom: .35rem;
+    border: 1px solid var(--border-soft) !important;
+    padding: .55rem .75rem !important;
+  }
+
+  .fundus-date-btn:hover {
+    background-color: var(--primary-50) !important;
+    border-color: var(--border) !important;
+    color: var(--text-strong) !important;
+  }
+
+  .fundus-date-btn.fundus-date-btn-active {
+    background-color: var(--primary) !important;
+    border-left: 3px solid var(--primary-hover) !important;
+    border-color: var(--primary) !important;
+    color: #ffffff !important;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(55, 65, 81, .2);
+  }
+
+  .fundus-date-btn.fundus-date-btn-active .text-muted {
+    color: rgba(255, 255, 255, 0.85) !important;
+  }
+
+  .fundus-date-btn.fundus-date-btn-active i.fa-chevron-right {
+    color: #ffffff !important;
+  }
+
+  .fundus-date-btn.fundus-date-btn-active .fw-semibold {
+    color: #ffffff !important;
+  }
+
+  #fundusEditingBanner {
+    background-color: var(--primary-50) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-strong) !important;
+    border-radius: 8px !important;
+    font-weight: 500;
+  }
+
+  #fundusEditingBanner i {
+    color: var(--primary) !important;
+  }
+
+  #fundusEditingBanner .btn-close {
+    filter: none;
+  }
+
+  .fundus-mode-radio-wrap .form-check-label {
+    cursor: pointer;
+  }
+
+  #fundusTable {
+    font-size: 0.8rem;
+    border-collapse: separate !important;
+    border-spacing: 0;
+  }
+
+  #fundusTable thead th {
+    background-color: var(--primary-50);
+    color: var(--text-strong);
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+    border-top: 1px solid var(--border);
+    padding: .4rem 1.2rem .4rem .6rem;
+    white-space: nowrap;
+    position: relative;
+  }
+
+  #fundusTable thead th.no-sort,
+  #fundusTable thead th.sorting_disabled {
+    background-image: none !important;
+    padding-right: .6rem !important;
+  }
+
+  #fundusTable tbody td {
+    padding: .35rem .6rem;
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: middle;
+    color: var(--text);
+  }
+
+  #fundusTable tbody tr:hover td {
+    background-color: var(--primary-50) !important;
+  }
+
+  #fundusTable.dataTable tbody tr.odd td {
+    background-color: #ffffff;
+  }
+
+  #fundusTable.dataTable tbody tr.even td {
+    background-color: #fafbfc;
+  }
+
+  #fundusTable tbody tr.fundus-row-selected td {
+    background-color: var(--primary-50) !important;
+    font-weight: 600;
+  }
+
+  .fundus-action-btns {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: 4px;
+    white-space: nowrap;
+    width: max-content;
+  }
+
+  .fundus-action-btns .btn {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .fundus-empty-cell {
+    color: var(--muted-light);
+  }
+
+  .btn-fundus-delete-date,
+  .btn-fundus-delete-row {
+    transition: all .15s ease;
+  }
+
+  .btn-fundus-delete-date:hover,
+  .btn-fundus-delete-row:hover {
+    background-color: #dc2626 !important;
+    border-color: #dc2626 !important;
+    color: #ffffff !important;
+  }
+
+  .fundus-date-delete-wrap {
+    display: inline-flex;
+    margin-left: auto;
+    padding-left: .35rem;
+  }
+
+  #ff_hn.input-group>.invalid-feedback {
+    display: none;
+  }
+
+  #ff_hn.input-group.was-validated>input:invalid~.invalid-feedback,
+  #ff_hn.input-group>input.is-invalid~.invalid-feedback {
+    display: block;
+    width: 100%;
+    margin-top: .25rem;
+    font-size: .875em;
+  }
+
+  #fundusRecordForm .input-group .form-select,
+  #fundusRecordForm .input-group .form-control {
+    z-index: 1;
+  }
+
+  .fundus-appointment-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .btn-fundus-appointment {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    border-radius: 4px;
+  }
+
+  .fundus-result-badge-severe {
+    background-color: #fecaca !important;
+    color: #991b1b !important;
+    border: 1px solid #fca5a5;
+    font-weight: 500;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+</style>
