@@ -20,9 +20,9 @@ import {
   INITIAL_LAB_RECORDS,
   INITIAL_DOWNLOAD_FILES,
   INITIAL_SERVICE_UNIT_STATS,
-  INITIAL_DASHBOARD_FUNDUS
+  INITIAL_DASHBOARD_FUNDUS,
+  INITIAL_USERS
 } from '../data/initialData';
-
 
 // Local storage keys
 const LS_KEYS = {
@@ -36,9 +36,11 @@ const LS_KEYS = {
   LAB_RECORDS: 'ncd_lab_records_v1',
   DOWNLOAD_FILES: 'ncd_download_files_v1',
   CURRENT_USER: 'ncd_current_user_v1',
+  USERS: 'ncd_users_v1',
   SERVICE_UNIT_STATS: 'ncd_service_unit_stats_v1',
   DASHBOARD_FUNDUS: 'ncd_dashboard_fundus_v1'
 };
+
 
 
 // SQL Schema for Supabase
@@ -228,6 +230,36 @@ CREATE POLICY "Allow all operations for anon" ON telemed_records FOR ALL USING (
 ALTER TABLE lab_records ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all operations for anon" ON lab_records FOR ALL USING (true);
 
+-- 10. Users Table (สำหรับระบบ Login ด้วย username & password จาก Supabase)
+CREATE TABLE IF NOT EXISTS users (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  username TEXT UNIQUE NOT NULL,
+  password TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  role TEXT DEFAULT 'staff',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Row Level Security (RLS) & Allow Read/Write for Authenticated / Anon (Demo)
+ALTER TABLE patients ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations for anon" ON patients FOR ALL USING (true);
+
+ALTER TABLE fundus_dates ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations for anon" ON fundus_dates FOR ALL USING (true);
+
+ALTER TABLE fundus_records ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations for anon" ON fundus_records FOR ALL USING (true);
+
+ALTER TABLE telemed_dates ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations for anon" ON telemed_dates FOR ALL USING (true);
+
+ALTER TABLE telemed_records ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations for anon" ON telemed_records FOR ALL USING (true);
+
+ALTER TABLE lab_records ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations for anon" ON lab_records FOR ALL USING (true);
+
 ALTER TABLE download_files ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all operations for anon" ON download_files FOR ALL USING (true);
 
@@ -236,6 +268,9 @@ CREATE POLICY "Allow all operations for anon" ON dashboard_service_stats FOR ALL
 
 ALTER TABLE dashboard_fundus_summary ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all operations for anon" ON dashboard_fundus_summary FOR ALL USING (true);
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all operations for anon" ON users FOR ALL USING (true);
 `;
 
 export const SUPABASE_GOOGLE_SHEET_SEED_SQL = `-- ========================================================
@@ -305,6 +340,16 @@ ON CONFLICT (id) DO UPDATE SET
   severe_npdr = EXCLUDED.severe_npdr,
   pdr = EXCLUDED.pdr,
   poor_view = EXCLUDED.poor_view;
+
+-- 3. ข้อมูลผู้ใช้งานระบบเริ่มต้น (Users สำหรับ Login จาก Supabase)
+INSERT INTO users (username, password, full_name, role) VALUES
+('admin', '1234', 'ผู้ดูแลระบบ PCU โฮงยาไทย', 'admin'),
+('staff', '1234', 'เจ้าหน้าที่ NCD โฮงยาไทย', 'staff'),
+('doctor', '1234', 'นพ.เวชศาสตร์ครอบครัว รพศ.เชียงราย', 'doctor')
+ON CONFLICT (username) DO UPDATE SET
+  password = EXCLUDED.password,
+  full_name = EXCLUDED.full_name,
+  role = EXCLUDED.role;
 `;
 
 
@@ -823,29 +868,170 @@ export class SupabaseManager {
     }
   }
 
-  // CURRENT USER SESSION
-  public getCurrentUser(): User {
-    const raw = localStorage.getItem(LS_KEYS.CURRENT_USER);
-    if (raw) {
-      try {
-        return JSON.parse(raw);
-      } catch (e) {}
+  // USER AUTHENTICATION & LOGIN (เชื่อมต่อกับตาราง users ใน Supabase)
+  public async login(
+    usernameInput: string,
+    passwordInput: string
+  ): Promise<{ success: boolean; user?: User; message?: string }> {
+    const uIn = usernameInput.trim();
+    const pIn = passwordInput.trim();
+
+    if (!uIn || !pIn) {
+      return { success: false, message: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน' };
     }
+
+    // 1. ลองตรวจสอบจากฐานข้อมูล Supabase ก่อน (ถ้าเชื่อมต่ออยู่)
+    if (this.isConnected && this.client) {
+      try {
+        const { data, error } = await this.client
+          .from('users')
+          .select('*')
+          .eq('username', uIn)
+          .maybeSingle();
+
+        if (!error && data) {
+          if (String(data.password) === pIn) {
+            const user: User = {
+              username: data.username,
+              name: data.full_name || data.username,
+              fullName: data.full_name || data.username,
+              role: data.role || 'staff',
+              token: 'sb-' + Date.now()
+            };
+            this.setCurrentUser(user);
+            return { success: true, user };
+          } else {
+            return { success: false, message: 'รหัสผ่านไม่ถูกต้อง (Supabase Authentication)' };
+          }
+        }
+      } catch (err: any) {
+        console.warn('Supabase auth query failed, checking local users:', err);
+      }
+    }
+
+    // 2. ตรวจสอบจาก Local Users (มี pre-seeded บัญชี admin, staff, doctor)
+    const localUsers = this.getLocal<User[]>(LS_KEYS.USERS, INITIAL_USERS);
+    const foundLocal = localUsers.find(
+      u => u.username.toLowerCase() === uIn.toLowerCase() && String(u.password) === pIn
+    );
+
+    if (foundLocal) {
+      const user: User = {
+        username: foundLocal.username,
+        name: foundLocal.name,
+        fullName: foundLocal.fullName,
+        role: foundLocal.role,
+        token: 'local-' + Date.now()
+      };
+      this.setCurrentUser(user);
+
+      // ถ้าเชื่อมต่อ Supabase อยู่ ให้ auto-seed เข้าตาราง users ใน Supabase ด้วย
+      if (this.isConnected && this.client) {
+        this.client.from('users').upsert({
+          username: foundLocal.username,
+          password: foundLocal.password || pIn,
+          full_name: foundLocal.fullName,
+          role: foundLocal.role
+        }).then();
+      }
+
+      return { success: true, user };
+    }
+
     return {
-      username: 'admin',
-      name: 'ผู้ดูแลระบบ PCU โฮงยาไทย',
-      fullName: 'ผู้ดูแลระบบ PCU โฮงยาไทย',
-      role: 'admin'
+      success: false,
+      message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (ทดสอบ: admin / 1234 หรือ staff / 1234)'
     };
   }
 
-  public setCurrentUser(user: User | null) {
+  public logout(): void {
+    localStorage.removeItem(LS_KEYS.CURRENT_USER);
+  }
+
+  public getCurrentUser(): User | null {
+    const raw = localStorage.getItem(LS_KEYS.CURRENT_USER);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as User;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  public setCurrentUser(user: User | null): void {
     if (user) {
       localStorage.setItem(LS_KEYS.CURRENT_USER, JSON.stringify(user));
     } else {
       localStorage.removeItem(LS_KEYS.CURRENT_USER);
     }
   }
+
+  public async changePassword(
+    username: string,
+    oldPasswordInput: string,
+    newPasswordInput: string
+  ): Promise<{ success: boolean; message: string }> {
+    const oldP = oldPasswordInput.trim();
+    const newP = newPasswordInput.trim();
+
+    if (!newP || newP.length < 4) {
+      return { success: false, message: 'รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 4 ตัวอักษร' };
+    }
+
+    // Update in Supabase
+    if (this.isConnected && this.client) {
+      try {
+        const { data, error } = await this.client
+          .from('users')
+          .select('*')
+          .eq('username', username)
+          .maybeSingle();
+
+        if (!error && data) {
+          if (String(data.password) !== oldP) {
+            return { success: false, message: 'รหัสผ่านเดิมไม่ถูกต้อง' };
+          }
+          await this.client
+            .from('users')
+            .update({ password: newP, updated_at: new Date().toISOString() })
+            .eq('username', username);
+        }
+      } catch (err: any) {
+        console.warn('Could not update password in Supabase:', err);
+      }
+    }
+
+    // Update in local users
+    const localUsers = this.getLocal<User[]>(LS_KEYS.USERS, INITIAL_USERS);
+    const updated = localUsers.map(u => {
+      if (u.username === username) {
+        return { ...u, password: newP };
+      }
+      return u;
+    });
+    this.setLocal(LS_KEYS.USERS, updated);
+
+    return { success: true, message: 'เปลี่ยนรหัสผ่านสำเร็จเรียบร้อยแล้ว' };
+  }
+
+  public async getUsers(): Promise<User[]> {
+    if (this.isConnected && this.client) {
+      try {
+        const { data, error } = await this.client.from('users').select('*');
+        if (!error && data && data.length > 0) {
+          return data.map(u => ({
+            username: u.username,
+            name: u.full_name,
+            fullName: u.full_name,
+            role: u.role,
+            password: u.password
+          }));
+        }
+      } catch (e) {}
+    }
+    return this.getLocal<User[]>(LS_KEYS.USERS, INITIAL_USERS);
+  }
+
 
   // HELPERS
   private getLocal<T>(key: string, defaultVal: T): T {

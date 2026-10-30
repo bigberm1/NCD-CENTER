@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ViewType, Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
+import { LoginPage } from './components/LoginPage';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { HomeView } from './components/views/HomeView';
 import { PatientsView } from './components/views/PatientsView';
 import { FundusView } from './components/views/FundusView';
@@ -27,8 +29,8 @@ import {
   DashboardFundusSummary
 } from './types';
 
-
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<User | null>(supabaseManager.getCurrentUser());
   const [currentView, setCurrentView] = useState<ViewType>('home');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
@@ -36,6 +38,7 @@ export default function App() {
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [isFileImportModalOpen, setIsFileImportModalOpen] = useState(false);
   const [isOpdPrintModalOpen, setIsOpdPrintModalOpen] = useState(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [opdPrintPatient, setOpdPrintPatient] = useState<Patient | null>(null);
   const [opdPrintDateStr, setOpdPrintDateStr] = useState<string | null>(null);
 
@@ -49,9 +52,8 @@ export default function App() {
   const [downloadFiles, setDownloadFiles] = useState<DownloadFile[]>([]);
   const [serviceUnitStats, setServiceUnitStats] = useState<ServiceUnitStat[]>([]);
   const [dashboardFundus, setDashboardFundus] = useState<DashboardFundusSummary[]>([]);
-  const [currentUser, setCurrentUser] = useState<User>(supabaseManager.getCurrentUser());
   const [supabaseConnected, setSupabaseConnected] = useState(supabaseManager.getStatus().isConnected);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   // Load all data
   const loadAllData = useCallback(async () => {
@@ -86,10 +88,19 @@ export default function App() {
     }
   }, []);
 
-
   useEffect(() => {
-    loadAllData();
-  }, [loadAllData]);
+    if (currentUser) {
+      loadAllData();
+    }
+  }, [currentUser, loadAllData]);
+
+  // Auth Logout
+  const handleLogout = () => {
+    if (window.confirm('คุณต้องการออกจากระบบ NCD Center หรือไม่?')) {
+      supabaseManager.logout();
+      setCurrentUser(null);
+    }
+  };
 
   // Handlers for Data Mutations
   const handleSavePatient = async (p: Patient) => {
@@ -203,6 +214,31 @@ export default function App() {
     setIsOpdPrintModalOpen(true);
   };
 
+  // IF NOT LOGGED IN, RENDER LOGIN PAGE
+  if (!currentUser) {
+    return (
+      <>
+        <LoginPage
+          onLoginSuccess={(user) => {
+            setCurrentUser(user);
+          }}
+          onOpenSupabaseConfig={() => setIsSupabaseModalOpen(true)}
+          supabaseConnected={supabaseConnected}
+        />
+
+        {/* Supabase Connection Modal accessible from Login Page */}
+        <SupabaseConfigModal
+          isOpen={isSupabaseModalOpen}
+          onClose={() => setIsSupabaseModalOpen(false)}
+          onConfigChanged={() => {
+            setSupabaseConnected(supabaseManager.getStatus().isConnected);
+          }}
+        />
+      </>
+    );
+  }
+
+  // LOGGED IN: RENDER MAIN APPLICATION
   return (
     <div className="min-h-screen bg-slate-50 font-['Sarabun',sans-serif] text-slate-800 flex">
       {/* Sidebar Navigation */}
@@ -226,6 +262,8 @@ export default function App() {
           onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
           onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
           onOpenFileImportModal={() => setIsFileImportModalOpen(true)}
+          onOpenChangePassword={() => setIsChangePasswordOpen(true)}
+          onLogout={handleLogout}
           supabaseConnected={supabaseConnected}
           currentUser={currentUser}
         />
@@ -249,7 +287,6 @@ export default function App() {
                   onSyncComplete={loadAllData}
                 />
               )}
-
 
               {currentView === 'patients' && (
                 <PatientsView
@@ -338,6 +375,15 @@ export default function App() {
         onClose={() => setIsFileImportModalOpen(false)}
         onImportComplete={loadAllData}
       />
+
+      {/* Change Password Modal */}
+      {currentUser && (
+        <ChangePasswordModal
+          isOpen={isChangePasswordOpen}
+          onClose={() => setIsChangePasswordOpen(false)}
+          username={currentUser.username}
+        />
+      )}
 
       {/* OPD Card Printable Modal */}
       <OpdCardPrintModal

@@ -163,6 +163,7 @@ export interface User {
   name: string;
   fullName: string;
   role: 'admin' | 'staff' | string;
+  password?: string;
   token?: string;
 }
 

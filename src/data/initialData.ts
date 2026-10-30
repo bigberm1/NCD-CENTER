@@ -8,8 +8,34 @@ import {
   DownloadFile,
   Hospital,
   ServiceUnitStat,
-  DashboardFundusSummary
+  DashboardFundusSummary,
+  User
 } from '../types';
+
+export const INITIAL_USERS: User[] = [
+  {
+    username: 'admin',
+    password: '1234',
+    name: 'ผู้ดูแลระบบ PCU โฮงยาไทย',
+    fullName: 'ผู้ดูแลระบบ PCU โฮงยาไทย',
+    role: 'admin'
+  },
+  {
+    username: 'staff',
+    password: '1234',
+    name: 'เจ้าหน้าที่ NCD โฮงยาไทย',
+    fullName: 'เจ้าหน้าที่ NCD โฮงยาไทย',
+    role: 'staff'
+  },
+  {
+    username: 'doctor',
+    password: '1234',
+    name: 'นพ.เวชศาสตร์ครอบครัว รพศ.เชียงราย',
+    fullName: 'นพ.เวชศาสตร์ครอบครัว รพศ.เชียงราย',
+    role: 'doctor'
+  }
+];
+
 
 
 export const INITIAL_HOSPITALS: Hospital[] = [

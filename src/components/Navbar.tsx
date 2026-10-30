@@ -1,6 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ViewType } from './Sidebar';
-import { Menu, Database, UploadCloud, UserCircle, Shield, Wifi, WifiOff } from 'lucide-react';
+import {
+  Menu,
+  Database,
+  UploadCloud,
+  User as UserIcon,
+  LogOut,
+  KeyRound,
+  Wifi,
+  ChevronDown
+} from 'lucide-react';
 import { User } from '../types';
 
 interface NavbarProps {
@@ -8,8 +17,10 @@ interface NavbarProps {
   onOpenMobileSidebar: () => void;
   onOpenSupabaseModal: () => void;
   onOpenFileImportModal: () => void;
+  onOpenChangePassword: () => void;
+  onLogout: () => void;
   supabaseConnected: boolean;
-  currentUser: User;
+  currentUser: User | null;
 }
 
 const VIEW_TITLES: Record<ViewType, { title: string; subtitle: string }> = {
@@ -29,13 +40,16 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenMobileSidebar,
   onOpenSupabaseModal,
   onOpenFileImportModal,
+  onOpenChangePassword,
+  onLogout,
   supabaseConnected,
   currentUser
 }) => {
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
   const info = VIEW_TITLES[currentView] || { title: 'NCD Center', subtitle: '' };
 
   return (
-    <header className="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 lg:px-7 flex items-center justify-between gap-4">
+    <header className="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 lg:px-7 flex items-center justify-between gap-4 font-['Sarabun',sans-serif]">
       {/* Left Title & Mobile Menu */}
       <div className="flex items-center gap-3 min-w-0">
         <button
@@ -90,20 +104,71 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="hidden sm:inline">ดึงข้อมูลจากไฟล์</span>
         </button>
 
-        {/* User Info */}
-        <div className="flex items-center gap-2 pl-2 border-l border-slate-200 text-xs">
-          <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center font-bold">
-            {currentUser.name ? currentUser.name.charAt(0) : 'U'}
+        {/* User Info & Dropdown */}
+        {currentUser && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowUserDropdown(!showUserDropdown)}
+              className="flex items-center gap-2 pl-2 border-l border-slate-200 text-xs hover:bg-slate-50 py-1 px-1.5 rounded-xl transition"
+            >
+              <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center font-bold">
+                {currentUser.name ? currentUser.name.charAt(0) : 'U'}
+              </div>
+              <div className="hidden xl:block text-left">
+                <div className="font-semibold text-slate-700 leading-tight">
+                  {currentUser.name}
+                </div>
+                <div className="text-[10px] text-slate-400 capitalize">
+                  {currentUser.role}
+                </div>
+              </div>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+
+            {/* Dropdown Menu */}
+            {showUserDropdown && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowUserDropdown(false)}
+                />
+                <div className="absolute right-0 top-full mt-1.5 w-52 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 text-xs">
+                  <div className="px-3.5 py-2 border-b border-slate-100">
+                    <div className="font-bold text-slate-800">{currentUser.name}</div>
+                    <div className="text-[10px] text-slate-400 capitalize">ผู้ใช้งาน: {currentUser.username} ({currentUser.role})</div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onOpenChangePassword();
+                    }}
+                    className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-medium transition"
+                  >
+                    <KeyRound className="w-4 h-4 text-slate-400" />
+                    <span>เปลี่ยนรหัสผ่าน</span>
+                  </button>
+
+                  <div className="my-1 border-t border-slate-100" />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onLogout();
+                    }}
+                    className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2 text-rose-600 font-medium transition"
+                  >
+                    <LogOut className="w-4 h-4 text-rose-500" />
+                    <span>ออกจากระบบ</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
-          <div className="hidden xl:block text-left">
-            <div className="font-semibold text-slate-700 leading-tight">
-              {currentUser.name}
-            </div>
-            <div className="text-[10px] text-slate-400 capitalize">
-              {currentUser.role}
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </header>
   );
